@@ -5,6 +5,12 @@
 
 import type { AppState } from '../../app/AppState';
 import { loadDefaultCatalog } from '../../catalog/loadCatalog';
+import { getActiveDisplay, projectObstacles, summarizeDesignHealth } from '../../av/DesignAnalysis';
+import { summarizeCameraCoverage } from '../../av/CameraAnalysis';
+import { resolveProjectSpeakers, usableSpeakerPlacements } from '../../av/SpeakerAnalysis';
+import { evaluateRoomAudioCoverage, DEFAULT_EAR_HEIGHT_M } from '../../av/SpeakerCoverageEngine';
+import { resolveProjectMicrophones, usableMicPlacements } from '../../av/MicAnalysis';
+import { evaluateRoomMicCoverage } from '../../av/MicrophoneCoverageEngine';
 
 const catalog = loadDefaultCatalog();
 
@@ -20,6 +26,15 @@ export function renderSimulationControlPanel(container: HTMLElement, state: AppS
   note.textContent =
     'Geometric / engineering estimates only. Heatmaps stay off until enabled. One heatmap layer at a time.';
   container.appendChild(note);
+
+  const anyLive =
+    state.displayAnalysis.enabled ||
+    state.micAnalysis.enabled ||
+    state.audioAnalysis.enabled ||
+    state.cameraAnalysis.enabled;
+  if (!anyLive) {
+    emptyHint(container, 'No analysis active', 'Select an AV device and choose Analyze.');
+  }
 
   const cats = new Set(state.equipment.map((e) => catalog.get(e.productId)?.category));
 
@@ -56,6 +71,17 @@ export function renderSimulationControlPanel(container: HTMLElement, state: AppS
       }],
       ['Contours', d.enabled && d.contours, (on) => state.setDisplayAnalysisView({ contours: on })]
     ]);
+    if (d.enabled) {
+      const display = getActiveDisplay(state.equipment, catalog);
+      const viewing = summarizeDesignHealth(state.seats, display, projectObstacles(state.room, state.tables, state.racks));
+      const sel = state.selection.kind === 'equipment' ? state.equipment.find((e) => e.instanceId === state.selection.id) : null;
+      const selName = sel ? sel.name : 'Active display';
+      summaryLine(
+        container,
+        `Display analysis · ${selName}`,
+        `${viewing.passCount} / ${viewing.totalSeats} seats within viewing guidance`
+      );
+    }
     if (d.enabled && d.heatmap) {
       metricSelect(container, d.heatmapMetric, (m) => state.setDisplayAnalysisView({ heatmapMetric: m }));
       legend(container, 'Viewing quality', 'Excellent / Good / Marginal / Poor — from the same AVIXA-style viewing engine as validation. Not a second model.');
@@ -82,6 +108,14 @@ export function renderSimulationControlPanel(container: HTMLElement, state: AppS
       ['Contours', m.enabled && m.contours, (on) => state.setMicAnalysisView({ contours: on })]
     ]);
     if (m.enabled && m.heatmap) legend(container, 'Pickup (geometric)', 'Inside catalog pickup radius / beam. Not polar-pattern physics.');
+    if (m.enabled) {
+      const mics = usableMicPlacements(resolveProjectMicrophones(state.equipment, catalog));
+      const micSum = evaluateRoomMicCoverage(
+        state.seats.map((s) => ({ seatId: s.id, x: s.x, z: s.z })),
+        mics
+      );
+      summaryLine(container, 'Microphone analysis', `${micSum.coveredSeats} / ${micSum.totalSeats} seats inside geometric pickup`);
+    }
   } else {
     emptyHint(container, 'No microphone placed', 'Add a catalog microphone to begin pickup analysis.');
   }
@@ -105,6 +139,14 @@ export function renderSimulationControlPanel(container: HTMLElement, state: AppS
     ]);
     if (a.enabled && a.heatmap) {
       legend(container, 'Geometric coverage', 'Free-field / catalog dispersion. Not room-acoustic SPL prediction.');
+    }
+    if (a.enabled) {
+      const speakers = usableSpeakerPlacements(resolveProjectSpeakers(state.equipment, catalog));
+      const audio = evaluateRoomAudioCoverage(
+        state.seats.map((s) => ({ seatId: s.id, x: s.x, z: s.z, earHeightM: DEFAULT_EAR_HEIGHT_M })),
+        speakers
+      );
+      summaryLine(container, 'Speaker analysis', `Geometric coverage ${audio.coveredSeats} / ${audio.totalSeats} seats`);
     }
   } else {
     emptyHint(container, 'No speaker placed', 'Add a catalog speaker to estimate coverage / SPL.');
@@ -144,6 +186,10 @@ export function renderSimulationControlPanel(container: HTMLElement, state: AppS
       ['Contours', c.enabled && c.contours, (on) => state.setCameraAnalysisView({ contours: on })]
     ]);
     if (c.enabled && c.heatmap) legend(container, 'FOV coverage', 'Catalog horizontal FOV frustum. Vertical FOV only if in catalog. Not photometric.');
+    if (c.enabled) {
+      const cam = summarizeCameraCoverage(state.seats, state.equipment, catalog, state.room, state.tables);
+      summaryLine(container, 'Camera analysis', `${cam.visibleSeats} / ${cam.totalSeats} seats in FOV (${cam.coveragePct}% geometric)`);
+    }
   } else {
     emptyHint(container, 'No camera placed', 'Add a catalog camera with horizontal FOV to run frustum coverage.');
   }
@@ -206,6 +252,13 @@ function metricSelect(
   sel.onchange = () => set(sel.value as AppState['displayAnalysis']['heatmapMetric']);
   wrap.append(lab, sel);
   container.appendChild(wrap);
+}
+
+function summaryLine(container: HTMLElement, title: string, body: string): void {
+  const box = document.createElement('div');
+  box.className = 'badge-note';
+  box.innerHTML = `<b>${title}</b><br>${body}`;
+  container.appendChild(box);
 }
 
 function emptyHint(container: HTMLElement, title: string, body: string): void {

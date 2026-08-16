@@ -18,6 +18,17 @@ import { compatibleDestinations, compatibleSources } from '../../system/PortComp
 import { cachedCableRoute } from '../../system/CableRouter';
 import { cableRouteContext } from '../../system/cableContext';
 import { cableTypeOf } from '../../system/CableBoq';
+import {
+  catalogCardLine,
+  deg,
+  inputSummary,
+  kg,
+  mm,
+  mountSummary,
+  NOT_SPECIFIED,
+  typeLabel
+} from '../../catalog/CatalogPresentation';
+import { evaluatePlacement } from '../../av/PlacementFeedback';
 
 const catalog = loadDefaultCatalog();
 
@@ -113,7 +124,9 @@ export function renderInspectorPanel(container: HTMLElement, state: AppState): v
   }
 
   if (state.selection.kind === 'equipment' && state.selection.id) {
-    title.textContent = 'PROPERTIES';
+    const inst = state.equipment.find((e) => e.instanceId === state.selection.id);
+    const product = inst ? catalog.get(inst.productId) : null;
+    title.textContent = (product?.category ?? 'EQUIPMENT').replace(/_/g, ' ').toUpperCase();
     renderEquipmentInspector(body, state, state.selection.id);
     return;
   }
@@ -129,11 +142,11 @@ export function renderInspectorPanel(container: HTMLElement, state: AppState): v
     const empty = document.createElement('div');
     empty.className = 'empty-state';
     if (!state.equipment.length) {
-      empty.innerHTML = `<div class="empty-title">NO EQUIPMENT</div>
-        <div class="empty-body">Add your first AV device, or let Auto Design create a starting system.</div>`;
+      empty.innerHTML = `<div class="empty-title">No project objects selected</div>
+        <div class="empty-body">Create a project or open an existing design, then add AV devices from the catalog.</div>`;
     } else {
       empty.innerHTML = `<div class="empty-title">No object selected</div>
-        <div class="empty-body">Select furniture or equipment in the tree, Plan, or 3D view.</div>`;
+        <div class="empty-body">Select an AV device, seat, table, or rack to view its properties.</div>`;
     }
     body.appendChild(empty);
     const catalogBtn = document.createElement('button');
@@ -336,6 +349,7 @@ function renderSeatInspector(body: HTMLElement, state: AppState, seatId: string)
     metricRow(dt, 'Viewing distance', `${analysis.viewingDistance.value} m`, statusPill(analysis.viewingDistance.status));
     metricRow(dt, 'Visibility', analysis.visibility.value.replace('_', ' '), statusPill(analysis.visibility.status));
     metricRow(dt, 'Sightline', analysis.sightline.value, statusPill(analysis.sightline.status));
+    metricRow(dt, 'Status', analysis.overall.toUpperCase(), statusPill(analysis.overall));
     const overall = document.createElement('div');
     overall.className = 'badge-note';
     overall.innerHTML = `Overall: ${statusPill(analysis.overall).outerHTML}<br><br><b>Methodology:</b> ${analysis.viewingDistance.method}`;
@@ -367,9 +381,10 @@ function renderSeatInspector(body: HTMLElement, state: AppState, seatId: string)
 
   if (insp.mic) {
     const micR = insp.mic;
+    const micSec = section(body, 'MICROPHONE', true);
     metricRow(
-      body,
-      'Mic pickup (geometric)',
+      micSec,
+      'Pickup (geometric)',
       micR.covered
         ? `inside · ${micR.nearestDistanceM ?? '—'} m${micR.angularDeltaDeg != null ? ` · ${micR.angularDeltaDeg}°` : ''}`
         : `outside · ${micR.nearestDistanceM ?? '—'} m`,
@@ -378,7 +393,7 @@ function renderSeatInspector(body: HTMLElement, state: AppState, seatId: string)
     const micNote = document.createElement('div');
     micNote.className = 'badge-note';
     micNote.textContent = micR.criterion;
-    body.appendChild(micNote);
+    micSec.appendChild(micNote);
     if (micR.status !== 'pass') {
       const go = document.createElement('button');
       go.className = 'btn';
@@ -387,28 +402,29 @@ function renderSeatInspector(body: HTMLElement, state: AppState, seatId: string)
         const m = state.equipment.find((e) => catalog.get(e.productId)?.category === 'microphone');
         if (m) state.analyzeEquipment(m.instanceId);
       };
-      body.appendChild(go);
+      micSec.appendChild(go);
     }
   }
 
   if (insp.speaker) {
     const audio = insp.speaker;
+    const spk = section(body, 'SPEAKER', true);
     metricRow(
-      body,
-      'Speaker coverage (geometric)',
+      spk,
+      'Coverage (geometric)',
       audio.inDispersion ? 'inside dispersion' : 'outside dispersion',
       statusPill(audio.inDispersion ? (audio.status === 'fail' ? 'warning' : audio.status) : 'fail')
     );
     metricRow(
-      body,
+      spk,
       'Estimated SPL',
       audio.splAtSeat != null ? `${audio.splAtSeat} dB @ ${audio.distanceM ?? '—'} m` : 'outside dispersion / DATA INCOMPLETE',
       statusPill(audio.status)
     );
     const audioNote = document.createElement('div');
     audioNote.className = 'badge-note';
-    audioNote.textContent = 'GEOMETRIC / free-field estimate — not room-acoustic simulation.';
-    body.appendChild(audioNote);
+    audioNote.textContent = 'Method: geometric / free-field estimate — not room-acoustic simulation.';
+    spk.appendChild(audioNote);
     if (!audio.inDispersion || audio.status === 'fail') {
       const go = document.createElement('button');
       go.className = 'btn';
@@ -417,25 +433,26 @@ function renderSeatInspector(body: HTMLElement, state: AppState, seatId: string)
         const s = state.equipment.find((e) => catalog.get(e.productId)?.category === 'speaker');
         if (s) state.analyzeEquipment(s.instanceId);
       };
-      body.appendChild(go);
+      spk.appendChild(go);
     }
   }
 
   if (insp.camera) {
     const cam = insp.camera;
     const camIds = cam.visible ? cam.coveringCameraIds : cam.inFov ? cam.blockingCameraIds : [];
-    metricRow(body, 'Camera FOV', cam.inFov ? 'PASS' : 'FAIL');
-    metricRow(body, 'Camera sightline', cam.sightline.toUpperCase());
+    const camSec = section(body, 'CAMERA', true);
+    metricRow(camSec, 'FOV', cam.inFov ? 'Inside catalog HFOV (geometric)' : 'Outside catalog HFOV');
+    metricRow(camSec, 'Sightline', cam.sightline.toUpperCase());
     metricRow(
-      body,
-      'Camera coverage',
+      camSec,
+      'Coverage',
       cam.visible ? `visible · ${camIds.join(', ') || '—'}` : cam.inFov ? `blocked · ${camIds.join(', ')}` : 'outside FOV',
       statusPill(cam.status)
     );
     const camNote = document.createElement('div');
     camNote.className = 'badge-note';
-    camNote.textContent = 'GEOMETRIC FRUSTUM ESTIMATE — catalog HFOV + SightlineEngine. Not image quality or NVR simulation.';
-    body.appendChild(camNote);
+    camNote.textContent = 'Method: geometric frustum from catalog HFOV. Not image quality or NVR simulation.';
+    camSec.appendChild(camNote);
     if (cam.status !== 'pass') {
       const go = document.createElement('button');
       go.className = 'btn';
@@ -444,7 +461,7 @@ function renderSeatInspector(body: HTMLElement, state: AppState, seatId: string)
         const c = state.equipment.find((e) => catalog.get(e.productId)?.category === 'camera');
         if (c) state.analyzeEquipment(c.instanceId);
       };
-      body.appendChild(go);
+      camSec.appendChild(go);
     }
   }
 }
@@ -455,13 +472,28 @@ function renderEquipmentInspector(body: HTMLElement, state: AppState, instanceId
   const product = catalog.get(inst.productId);
   if (!product) return;
 
+  const ident = document.createElement('div');
+  ident.className = 'equip-identity';
+  const mfr = document.createElement('div');
+  mfr.className = 'manufacturer';
+  mfr.textContent = product.manufacturer;
+  const model = document.createElement('div');
+  model.className = 'model';
+  model.textContent = product.model;
+  const cat = document.createElement('div');
+  cat.className = 'muted';
+  cat.textContent = `${typeLabel(product)}${product.display ? ` · ${product.display.diagonalInches}"` : ''}`;
+  ident.append(mfr, model, cat);
+  body.appendChild(ident);
+
   const prov = document.createElement('span');
   prov.className = `provenance ${product.provenance}`;
   prov.textContent = `${product.provenance.replace('_', ' ')} data`;
   body.appendChild(prov);
 
-  metricRow(body, 'Manufacturer', product.manufacturer);
-  metricRow(body, 'Model', product.model);
+  metricRow(body, 'Manufacturer', product.manufacturer || NOT_SPECIFIED);
+  metricRow(body, 'Model', product.model || NOT_SPECIFIED);
+  metricRow(body, 'Category', product.category.replace(/_/g, ' '));
   const nameField = document.createElement('div');
   nameField.className = 'field';
   const nameLbl = document.createElement('label');
@@ -529,19 +561,39 @@ function renderEquipmentInspector(body: HTMLElement, state: AppState, instanceId
   if (incomplete) appendCatalogLink(body, state);
 
   if (product.display) {
-    metricRow(body, 'Size', `${product.display.diagonalInches}"`);
-    metricRow(body, 'Resolution', product.display.resolution);
+    metricRow(body, 'Display technology', typeLabel(product));
+    metricRow(body, 'Screen size', `${product.display.diagonalInches}"`);
+    metricRow(body, 'Resolution', product.display.resolution || NOT_SPECIFIED);
+  }
+  const dims = section(body, 'DIMENSIONS', true);
+  metricRow(dims, 'Width', mm(product.physical.width));
+  metricRow(dims, 'Height', mm(product.physical.height));
+  metricRow(dims, 'Depth', mm(product.physical.depth));
+  metricRow(dims, 'Weight', kg(product.physical.weightKg));
+  metricRow(body, 'Mounting', mountSummary(product));
+  metricRow(body, 'Inputs / ports', inputSummary(product));
+  if (product.display) {
+    metricRow(body, 'Catalog summary', catalogCardLine(product));
   }
   if (product.microphone) {
-    metricRow(body, 'Pickup radius', `${product.microphone.pickupRadiusM} m`);
-    if (product.microphone.beamWidthDeg != null) {
-      metricRow(body, 'Beam width', `${product.microphone.beamWidthDeg}°`);
-    }
+    metricRow(body, 'Microphone type', product.microphone.pattern || NOT_SPECIFIED);
+    metricRow(body, 'Pickup pattern', product.microphone.pattern || NOT_SPECIFIED);
+    metricRow(
+      body,
+      'Pickup radius',
+      product.microphone.pickupRadiusM != null ? `${product.microphone.pickupRadiusM} m` : NOT_SPECIFIED
+    );
+    metricRow(
+      body,
+      'Beam width',
+      product.microphone.beamWidthDeg != null ? `${product.microphone.beamWidthDeg}°` : NOT_SPECIFIED
+    );
     metricRow(body, 'Coverage model', product.microphone.coverageModel ?? 'omni (disc if radius present)');
-    metricRow(body, 'Pattern (catalog text)', product.microphone.pattern);
-    metricRow(body, 'Mount', product.microphone.mount);
+    metricRow(body, 'Mount', product.microphone.mount || NOT_SPECIFIED);
+    metricRow(body, 'Network / interface', product.microphone.connection || NOT_SPECIFIED);
   }
   if (product.speaker) {
+    metricRow(body, 'Speaker type', typeLabel(product));
     metricRow(
       body,
       'Max SPL @ 1 m',
@@ -549,46 +601,49 @@ function renderEquipmentInspector(body: HTMLElement, state: AppState, instanceId
     );
     metricRow(
       body,
-      'Dispersion',
+      'Coverage angle',
       product.speaker.dispersionDeg != null
         ? `${product.speaker.dispersionDeg}°`
         : product.speaker.horizontalDispersionDeg != null && product.speaker.verticalDispersionDeg != null
           ? `${product.speaker.horizontalDispersionDeg}° H / ${product.speaker.verticalDispersionDeg}° V`
           : 'DATA INCOMPLETE'
     );
-    if (product.speaker.horizontalDispersionDeg != null) {
-      metricRow(body, 'Horizontal dispersion', `${product.speaker.horizontalDispersionDeg}°`);
-    }
-    if (product.speaker.verticalDispersionDeg != null) {
-      metricRow(body, 'Vertical dispersion', `${product.speaker.verticalDispersionDeg}°`);
-    }
+    metricRow(body, 'Horizontal dispersion', deg(product.speaker.horizontalDispersionDeg));
+    metricRow(body, 'Vertical dispersion', deg(product.speaker.verticalDispersionDeg));
+    metricRow(body, 'Mount', product.speaker.mount || NOT_SPECIFIED);
   }
   if (product.camera) {
-    metricRow(
-      body,
-      'Horizontal FOV',
-      product.camera.horizontalFovDeg != null ? `${product.camera.horizontalFovDeg}°` : 'DATA INCOMPLETE'
-    );
-    metricRow(
-      body,
-      'Vertical FOV',
-      product.camera.verticalFovDeg != null ? `${product.camera.verticalFovDeg}°` : 'not in catalog (not invented)'
-    );
-    metricRow(body, 'Mount', product.camera.mount);
+    metricRow(body, 'Horizontal FOV', product.camera.horizontalFovDeg != null ? deg(product.camera.horizontalFovDeg) : 'DATA INCOMPLETE');
+    metricRow(body, 'Vertical FOV', deg(product.camera.verticalFovDeg));
+    metricRow(body, 'Mount', product.camera.mount || NOT_SPECIFIED);
+    metricRow(body, 'Network / video', inputSummary(product));
+  }
+  if (product.category === 'rack' || product.rackUnits != null) {
+    metricRow(body, 'Rack units', product.rackUnits != null ? `${product.rackUnits} RU` : NOT_SPECIFIED);
   }
 
-  numField(body, 'Position X (m)', inst.position.x, 0.01, (v) =>
+  const placeNote = evaluatePlacement(state.room, state.tables, product, inst.position);
+  const placeEl = document.createElement('div');
+  placeEl.className = 'badge-note';
+  placeEl.style.color = placeNote.status === 'valid' ? 'var(--success)' : 'var(--warning)';
+  placeEl.textContent = placeNote.note;
+  body.appendChild(placeEl);
+
+  const pose = section(body, 'POSITION', true);
+  numField(pose, 'X (m)', inst.position.x, 0.01, (v) =>
     state.updateEquipment(instanceId, { position: { ...inst.position, x: v } })
   );
-  numField(body, 'Position Y / Height (m)', inst.position.y, 0.01, (v) =>
+  numField(pose, 'Y / mounting height (m)', inst.position.y, 0.01, (v) =>
     state.updateEquipment(instanceId, { position: { ...inst.position, y: v } })
   );
-  numField(body, 'Position Z (m)', inst.position.z, 0.01, (v) =>
+  numField(pose, 'Z (m)', inst.position.z, 0.01, (v) =>
     state.updateEquipment(instanceId, { position: { ...inst.position, z: v } })
   );
-  numField(body, 'Rotation Y (°)', (inst.rotationY * 180) / Math.PI, 5, (v) =>
+  numField(pose, 'Yaw (°)', (inst.rotationY * 180) / Math.PI, 5, (v) =>
     state.updateEquipment(instanceId, { rotationY: (v * Math.PI) / 180 })
   );
+  metricRow(pose, 'Pitch', NOT_SPECIFIED);
+  metricRow(pose, 'Roll', NOT_SPECIFIED);
 
   if (state.racks.length) {
     const rackSel = document.createElement('select');

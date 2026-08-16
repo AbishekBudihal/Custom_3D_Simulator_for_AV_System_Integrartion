@@ -7,6 +7,7 @@
 
 import type { RoomModel } from '../room/RoomModel';
 import type { EquipmentProduct } from '../catalog/EquipmentCatalog';
+import { exclusiveCeiling, exclusiveFloor, exclusiveWall } from '../av/PlacementFeedback';
 import {
   computeWallCandidates,
   presentationRotation,
@@ -90,8 +91,12 @@ export function snapWallMounted(
 /** Snap ceiling-mounted equipment (speakers, ceiling mics) to ceiling height. */
 export function snapCeilingMounted(room: RoomModel, x: number, z: number): SnapResult {
   const y = Number((room.height - CEILING_INSET_M).toFixed(3));
+  const maxX = room.width / 2 - CEILING_INSET_M;
+  const maxZ = room.depth / 2 - CEILING_INSET_M;
+  const cx = Number(Math.max(-maxX, Math.min(maxX, x)).toFixed(3));
+  const cz = Number(Math.max(-maxZ, Math.min(maxZ, z)).toFixed(3));
   return {
-    position: { x: Number(x.toFixed(3)), y, z: Number(z.toFixed(3)) },
+    position: { x: cx, y, z: cz },
     rotationY: 0,
     snapKind: 'ceiling',
     note: `Snapped to ceiling (${y.toFixed(2)}m AFF)`
@@ -119,18 +124,32 @@ export function snapEquipment(
   position: { x: number; y: number; z: number },
   rotationY: number
 ): SnapResult {
-  const mount = product.mounting;
   const category = product.category;
+  const speakerMount = product.speaker?.mount;
+  const cameraMount = product.camera?.mount;
+  const micMount = product.microphone?.mount;
 
-  if (category === 'display' || (mount?.wall && category === 'camera')) {
-    return snapWallMounted(room, product, position.x, position.z, position.y);
-  }
-
-  if (product.speaker?.mount === 'ceiling' || product.microphone?.mount === 'ceiling') {
+  if (
+    exclusiveCeiling(product) ||
+    speakerMount === 'ceiling' ||
+    speakerMount === 'pendant' ||
+    cameraMount === 'ceiling' ||
+    micMount === 'ceiling'
+  ) {
     return snapCeilingMounted(room, position.x, position.z);
   }
 
-  if (product.microphone?.mount === 'table') {
+  if (
+    exclusiveWall(product) ||
+    category === 'display' ||
+    speakerMount === 'wall' ||
+    cameraMount === 'wall' ||
+    micMount === 'wall'
+  ) {
+    return snapWallMounted(room, product, position.x, position.z, position.y);
+  }
+
+  if (exclusiveFloor(product) || micMount === 'table' || cameraMount === 'table') {
     return snapFloorMounted(room, position.x, position.z, product.physical.height || 0.05);
   }
 

@@ -73,12 +73,23 @@ export function renderValidationPanel(container: HTMLElement, state: AppState): 
       actions.className = 'finding-actions';
       const view = document.createElement('button');
       view.className = 'btn primary';
-      view.textContent = 'View Issue';
+      view.textContent = 'Focus';
+      view.title = 'Select the affected object and show this issue';
       view.onclick = (e) => {
         e.stopPropagation();
         inspect(state, f);
       };
-      actions.appendChild(view);
+      const analyze = document.createElement('button');
+      analyze.className = 'btn';
+      analyze.textContent = 'Analyze';
+      analyze.title = 'Open Simulate for the related device';
+      analyze.onclick = (e) => {
+        e.stopPropagation();
+        inspect(state, f);
+        const eq = f.objectId || f.affectedObjects.find((o) => o.kind === 'equipment')?.id;
+        if (eq) state.analyzeEquipment(eq);
+      };
+      actions.append(view, analyze);
       row.appendChild(actions);
       row.onclick = () => inspect(state, f);
       container.appendChild(row);
@@ -108,10 +119,20 @@ export function renderValidationPanel(container: HTMLElement, state: AppState): 
       actions.className = 'finding-actions';
       const view = document.createElement('button');
       view.className = 'btn';
-      view.textContent = 'View issue';
+      view.textContent = 'Focus';
+      view.title = 'Select the affected object and show this issue';
       view.onclick = (e) => {
         e.stopPropagation();
         inspect(state, f);
+      };
+      const analyze = document.createElement('button');
+      analyze.className = 'btn';
+      analyze.textContent = 'Analyze';
+      analyze.onclick = (e) => {
+        e.stopPropagation();
+        inspect(state, f);
+        const eq = f.objectId || f.affectedObjects.find((o) => o.kind === 'equipment')?.id;
+        if (eq) state.analyzeEquipment(eq);
       };
       const det = document.createElement('button');
       det.className = 'btn';
@@ -120,7 +141,7 @@ export function renderValidationPanel(container: HTMLElement, state: AppState): 
         e.stopPropagation();
         state.setDetailsFinding(state.detailsFindingId === f.id ? null : f.id);
       };
-      actions.append(view, det);
+      actions.append(view, analyze, det);
       card.appendChild(actions);
     }
     if (state.detailsFindingId === f.id) {

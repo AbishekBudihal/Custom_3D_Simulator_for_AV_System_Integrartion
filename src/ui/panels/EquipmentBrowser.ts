@@ -25,7 +25,8 @@ import {
   suggestMicDesign,
   centerDisplayOnWall
 } from '../../av/PlacementSuggestionEngine';
-import { snapWallMounted } from '../../interaction/SnapEngine';
+import { snapWallMounted, snapEquipment } from '../../interaction/SnapEngine';
+import { catalogCardLine } from '../../catalog/CatalogPresentation';
 import { getPresentationWall } from '../../room/RoomGeometry';
 import {
   cameraEngineeringReady,
@@ -246,12 +247,12 @@ function renderProductCard(p: EquipmentProduct, state: AppState, wrap: HTMLEleme
   model.textContent = p.model;
   const specs = document.createElement('div');
   specs.className = 'specs';
-  specs.textContent = specLine(p);
+  specs.textContent = catalogCardLine(p);
   card.append(mfr, model, specs);
 
   const flags = document.createElement('div');
   flags.className = 'equip-card-flags';
-  flags.innerHTML = `<span>✓ Specifications</span>`;
+  flags.innerHTML = `<span>Catalog specs</span>`;
   const incompleteHint = catalogIncompleteReason(p);
   if (incompleteHint) {
     flags.innerHTML = `<span class="data-incomplete">DATA INCOMPLETE</span>`;
@@ -282,15 +283,15 @@ function renderProductCard(p: EquipmentProduct, state: AppState, wrap: HTMLEleme
 function categoryIcon(p: EquipmentProduct): string {
   switch (p.category) {
     case 'display':
-      return '🖥';
+      return 'DISP';
     case 'speaker':
-      return '🔊';
+      return 'SPK';
     case 'microphone':
-      return '🎙';
+      return 'MIC';
     case 'camera':
-      return '🎥';
+      return 'CAM';
     default:
-      return '📦';
+      return p.category.slice(0, 4).toUpperCase();
   }
 }
 
@@ -300,21 +301,6 @@ function catalogIncompleteReason(p: EquipmentProduct): string | null {
   if (p.category === 'speaker') return speakerEngineeringReady(p);
   if (p.category === 'camera') return cameraEngineeringReady(p);
   return null;
-}
-
-function specLine(p: EquipmentProduct): string {
-  if (p.display) return `${p.display.diagonalInches}" · ${p.display.resolution} · ${p.display.brightnessNits} cd/m²`;
-  if (p.speaker) return `${p.speaker.mount} · ${p.speaker.dispersionDeg}° dispersion · ${p.speaker.maxSplAt1m} dB @1m`;
-  if (p.microphone) {
-    const bw = p.microphone.beamWidthDeg != null ? ` · ${p.microphone.beamWidthDeg}° sector` : '';
-    return `${p.microphone.mount} · ${p.microphone.pickupRadiusM}m pickup${bw} · ${p.microphone.pattern}`;
-  }
-  if (p.camera) {
-    const h = p.camera.horizontalFovDeg != null ? `${p.camera.horizontalFovDeg}° HFOV` : 'HFOV DATA INCOMPLETE';
-    const v = p.camera.verticalFovDeg != null ? ` · ${p.camera.verticalFovDeg}° VFOV` : '';
-    return `${p.camera.mount} · ${h}${v}`;
-  }
-  return p.type;
 }
 
 // ── SUGGESTED POSITION / DESIGN FLOW (Phase B) ─────────────────
@@ -385,12 +371,15 @@ function renderSuggestionFlow(wrap: HTMLElement, state: AppState, product: Equip
     addBtn.className = 'btn primary';
     addBtn.textContent = 'Add to Design (center of room)';
     addBtn.onclick = () => {
+      const snapped = snapEquipment(room, product, { x: 0, y: 1, z: 0 }, 0);
       state.addEquipment({
         instanceId: `eq-${Date.now()}`,
         productId: product.id,
         name: `${product.manufacturer} ${product.model}`,
-        position: { x: 0, y: 1, z: 0 },
-        rotationY: 0
+        position: snapped.position,
+        rotationY: snapped.rotationY,
+        wall: snapped.wall,
+        placementMode: 'manual'
       });
       browserState.openProductId = null;
       state.setStep('equipment');

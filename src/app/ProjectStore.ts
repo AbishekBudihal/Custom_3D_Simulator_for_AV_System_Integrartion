@@ -10,6 +10,8 @@ import type { AppState } from './AppState';
 import type { RoomModel } from '../room/RoomModel';
 import type { Seat, TableSpec } from '../room/SeatingGenerator';
 import type { EquipmentInstance } from '../catalog/EquipmentCatalog';
+import type { SystemConnection, SystemGroup, SystemRoute } from '../system/SystemTypes';
+import type { AVRack } from '../av/AVRack';
 
 export interface ProjectFile {
   project: {
@@ -26,10 +28,12 @@ export interface ProjectFile {
    *  entity) still load — they'll just come back with no tables until the
    *  user regenerates seating. */
   tables?: TableSpec[];
-  racks?: import('../av/AVRack').AVRack[];
+  racks?: AVRack[];
   equipment: EquipmentInstance[];
-  connections?: import('../system/SystemTypes').SystemConnection[];
-  routes?: import('../system/SystemTypes').SystemRoute[];
+  connections?: SystemConnection[];
+  routes?: SystemRoute[];
+  systemGroups?: SystemGroup[];
+  systemLayout?: Record<string, { x: number; y: number }>;
   settings: {
     viewMode: string;
   };
@@ -53,6 +57,8 @@ export function serializeProject(state: AppState): ProjectFile {
     equipment: state.equipment,
     connections: state.connections,
     routes: state.routes,
+    systemGroups: state.systemGroups,
+    systemLayout: state.systemLayout,
     settings: {
       viewMode: state.viewMode
     }
@@ -69,19 +75,45 @@ export function downloadProject(state: AppState): void {
   URL.revokeObjectURL(a.href);
 }
 
-export function loadProjectInto(state: AppState, file: ProjectFile): void {
-  state.project.name = file.project.name;
-  state.project.designer = file.project.designer;
-  state.project.roomUseCase = file.project.roomUseCase as AppState['project']['roomUseCase'];
-  // Direct assignment — never route through setRoom/setSeats here, which would
-  // push undo history entries and could make a load look like a user edit.
-  state.room = file.room ? JSON.parse(JSON.stringify(file.room)) : null;
-  state.seats = JSON.parse(JSON.stringify(file.seating ?? []));
-  state.tables = JSON.parse(JSON.stringify(file.tables ?? []));
-  state.racks = JSON.parse(JSON.stringify(file.racks ?? []));
-  state.equipment = JSON.parse(JSON.stringify(file.equipment ?? []));
-  state.connections = JSON.parse(JSON.stringify(file.connections ?? []));
-  state.routes = JSON.parse(JSON.stringify(file.routes ?? []));
-  state.clearHistory();
-  state.notify();
+export function parseProjectJson(text: string): { ok: true; file: ProjectFile } | { ok: false; message: string } {
+  try {
+    const data = JSON.parse(text) as unknown;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      return { ok: false, message: 'This file is not a SIMSTAGE project.' };
+    }
+    const project = (data as ProjectFile).project;
+    if (!project || typeof project.name !== 'string') {
+      return { ok: false, message: 'This file is missing project metadata and cannot be opened.' };
+    }
+    return { ok: true, file: data as ProjectFile };
+  } catch {
+    return { ok: false, message: 'The project file could not be read. It may not be valid JSON.' };
+  }
+}
+
+export function loadProjectInto(state: AppState, file: ProjectFile): { ok: true } | { ok: false; message: string } {
+  try {
+    state.project.name = file.project.name;
+    state.project.designer = file.project.designer;
+    state.project.roomUseCase = file.project.roomUseCase as AppState['project']['roomUseCase'];
+    // Direct assignment — never route through setRoom/setSeats here, which would
+    // push undo history entries and could make a load look like a user edit.
+    state.room = file.room ? JSON.parse(JSON.stringify(file.room)) : null;
+    state.seats = JSON.parse(JSON.stringify(file.seating ?? []));
+    state.tables = JSON.parse(JSON.stringify(file.tables ?? []));
+    state.racks = JSON.parse(JSON.stringify(file.racks ?? []));
+    state.equipment = JSON.parse(JSON.stringify(file.equipment ?? []));
+    state.connections = JSON.parse(JSON.stringify(file.connections ?? []));
+    state.routes = JSON.parse(JSON.stringify(file.routes ?? []));
+    state.systemGroups = JSON.parse(JSON.stringify(file.systemGroups ?? []));
+    state.systemLayout = JSON.parse(JSON.stringify(file.systemLayout ?? {}));
+    state.selection = { kind: 'none', id: null };
+    state.selectedConnectionId = null;
+    state.clearHistory();
+    state.notify();
+    return { ok: true };
+  } catch (err) {
+    console.error(err);
+    return { ok: false, message: 'The project could not be loaded. The file may be incomplete.' };
+  }
 }

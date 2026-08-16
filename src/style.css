@@ -559,6 +559,19 @@ button:focus-visible, input:focus-visible, select:focus-visible, .nav-item:focus
   margin-bottom: 4px;
 }
 .analysis-legend-labels { display: flex; justify-content: space-between; color: var(--text-tertiary); font-size: 10px; }
-.analysis-legend-panel { margin: 8px 0 12px; }
+.equip-identity { margin: 0 0 10px; }
+.equip-identity .manufacturer {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.equip-identity .model {
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.analysis-legend-hud { max-width: min(280px, calc(100% - 24px)); }
 .panel-left.beginner .tree-view-btn { display: none; }
 

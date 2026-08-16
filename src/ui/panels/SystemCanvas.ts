@@ -33,6 +33,13 @@ export function renderSystemCanvas(container: HTMLElement, state: AppState): voi
   }
 
   container.appendChild(renderToolbar(state));
+  if (!state.connections.length) {
+    const emptyCx = document.createElement('div');
+    emptyCx.className = 'empty-state';
+    emptyCx.innerHTML = `<div class="empty-title">No system connections yet</div>
+      <div class="empty-body">Connect device ports to build the AV system. Routes are estimated, not measured cable pulls.</div>`;
+    container.appendChild(emptyCx);
+  }
 
   const stage = document.createElement('div');
   stage.className = 'system-stage';

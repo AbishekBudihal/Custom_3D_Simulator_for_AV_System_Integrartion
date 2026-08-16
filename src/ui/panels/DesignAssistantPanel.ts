@@ -45,7 +45,12 @@ export function renderDesignAssistant(host: HTMLElement, state: AppState): void 
     title.textContent = 'Design Assistant  ✦';
     const body = document.createElement('div');
     body.className = 'muted';
-    body.textContent = attention ? `${attention} thing${attention === 1 ? '' : 's'} need attention` : 'Room checklist looks clear';
+    body.textContent = attention
+      ? (() => {
+          const first = report.findings.find((f) => f.severity === 'error' || f.severity === 'warning');
+          return first ? `${first.category.toUpperCase()}  ${first.title}` : `${attention} issues need attention`;
+        })()
+      : 'Room checklist looks clear';
     const review = document.createElement('button');
     review.className = 'btn primary';
     review.textContent = 'Review';

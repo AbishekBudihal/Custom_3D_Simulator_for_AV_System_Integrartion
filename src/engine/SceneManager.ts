@@ -35,6 +35,7 @@ import { addCableRouteOverlays } from './CableRouteOverlay';
 import { cachedCableRoute } from '../system/CableRouter';
 import { cableRouteContext } from '../system/cableContext';
 import { snapEquipment } from '../interaction/SnapEngine';
+import { evaluatePlacement } from '../av/PlacementFeedback';
 import {
   computeSeatMicStatuses,
   resolveProjectMicrophones,
@@ -505,14 +506,16 @@ export class SceneManager {
     if (!inst || !product) return;
 
     if (this.dragging) {
+      const position = {
+        x: Number(this.selectedMesh.position.x.toFixed(3)),
+        y: Number(this.selectedMesh.position.y.toFixed(3)),
+        z: Number(this.selectedMesh.position.z.toFixed(3))
+      };
+      this.state.lastSnapNote = evaluatePlacement(this.state.room, this.state.tables, product, position).note;
       this.state.updateEquipment(
         id,
         {
-          position: {
-            x: Number(this.selectedMesh.position.x.toFixed(3)),
-            y: Number(this.selectedMesh.position.y.toFixed(3)),
-            z: Number(this.selectedMesh.position.z.toFixed(3))
-          },
+          position,
           rotationY: this.selectedMesh.rotation.y,
           placementMode: 'manual'
         },
@@ -545,7 +548,7 @@ export class SceneManager {
       },
       { recordHistory: false }
     );
-    this.state.setSnapNote(snapped.note);
+    this.state.setSnapNote(`${snapped.note} · ${evaluatePlacement(this.state.room, this.state.tables, product, snapped.position).note}`);
     this.state.finishGesture();
   }
 

@@ -11,7 +11,7 @@ import { renderSystemCanvas } from '../panels/SystemCanvas';
 import { renderAutoDesignOverlay } from '../panels/AutoDesignPanel';
 import { renderDesignAssistant } from '../panels/DesignAssistantPanel';
 import { renderProjectSetupOverlay } from '../panels/ProjectSetupOverlay';
-import { downloadProject } from '../../app/ProjectStore';
+import { downloadProject, parseProjectJson, loadProjectInto } from '../../app/ProjectStore';
 import { validationReportFor } from '../../av/validation/validationCache';
 import type { ShellNav } from '../workspace/projectSetup';
 
@@ -48,9 +48,38 @@ export function buildLayout(root: HTMLElement, state: AppState): LayoutRefs {
   newBtn.textContent = 'New';
   newBtn.className = 'topbar-ghost';
   newBtn.onclick = () => state.openNewProject();
+  const openBtn = document.createElement('button');
+  openBtn.textContent = 'Open';
+  openBtn.className = 'topbar-ghost';
+  openBtn.title = 'Open a saved project';
+  openBtn.setAttribute('aria-label', 'Open project');
+  openBtn.onclick = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      file
+        .text()
+        .then((text) => {
+          const parsed = parseProjectJson(text);
+          if (!parsed.ok) {
+            state.setSnapNote(parsed.message);
+            return;
+          }
+          const result = loadProjectInto(state, parsed.file);
+          state.setSnapNote(result.ok ? 'Project loaded' : result.message);
+        })
+        .catch(() => state.setSnapNote('Could not read the project file.'));
+    };
+    input.click();
+  };
   const exportBtn = document.createElement('button');
   exportBtn.textContent = 'Export';
   exportBtn.className = 'topbar-ghost';
+  exportBtn.title = 'Save project as JSON';
+  exportBtn.setAttribute('aria-label', 'Export project');
   exportBtn.onclick = () => downloadProject(state);
   const autoBtn = document.createElement('button');
   autoBtn.textContent = 'Auto Design';
@@ -58,7 +87,7 @@ export function buildLayout(root: HTMLElement, state: AppState): LayoutRefs {
   autoBtn.onclick = () => state.requestAutoDesign();
   const healthChip = document.createElement('span');
   healthChip.className = 'health-chip';
-  topbar.append(brand, modeSwitch, projectName, complexity, healthChip, autoBtn, newBtn, exportBtn);
+  topbar.append(brand, modeSwitch, projectName, complexity, healthChip, autoBtn, newBtn, openBtn, exportBtn);
 
   const mainLayout = document.createElement('div');
   mainLayout.className = 'main-layout';
@@ -222,8 +251,8 @@ export function buildLayout(root: HTMLElement, state: AppState): LayoutRefs {
         : '';
     el.innerHTML = `<div class="analysis-legend-title">${heat}${metric ? ` · ${metric}` : ''}</div>
       <div class="analysis-legend-bar"></div>
-      <div class="analysis-legend-labels"><span>Poor</span><span>Marginal</span><span>Good</span><span>Excellent</span></div>
-      <div class="muted">Continuous floor field from sampled analysis. Furniture footprints are excluded.</div>`;
+      <div class="analysis-legend-labels">${legendLabels(heat, metric)}</div>
+      <div class="muted">${legendNote(heat, metric)}</div>`;
   }
 
   function renderAll(): void {
@@ -304,7 +333,9 @@ export function buildLayout(root: HTMLElement, state: AppState): LayoutRefs {
       report.summary.designStatus === 'pass'
         ? `✓ ${report.summary.passCount}`
         : `⚠ ${report.summary.warningCount}  ✕ ${report.summary.errorCount}`;
-    healthChip.title = 'Design health counts — not a scored percentage';
+    healthChip.title = report.summary.designStatus === 'pass'
+      ? 'Configured checks are passing'
+      : 'Open Validate for actionable design issues';
     healthChip.onclick = () => state.setShellNav('validate');
 
     renderObjectBrowser(objectBrowserEl, state);
@@ -369,4 +400,39 @@ export function buildLayout(root: HTMLElement, state: AppState): LayoutRefs {
   });
 
   return { viewportEl: viewportCanvas };
+}
+
+function legendLabels(heat: string, metric: string): string {
+  if (heat.startsWith('Viewing') && metric === 'Angle') {
+    return '<span>&gt;45° Poor</span><span>30–45°</span><span>≤30° Excellent</span>';
+  }
+  if (heat.startsWith('Viewing') && metric === 'Distance') {
+    return '<span>Too far</span><span>Marginal</span><span>Within guidance</span>';
+  }
+  if (heat.includes('speaker')) {
+    return '<span>Outside</span><span>Weak</span><span>Inside coverage</span>';
+  }
+  if (heat.includes('Mic')) {
+    return '<span>Outside</span><span>Edge</span><span>Inside pickup</span>';
+  }
+  if (heat.includes('Camera')) {
+    return '<span>Outside FOV</span><span>Blocked</span><span>Visible</span>';
+  }
+  return '<span>Poor</span><span>Marginal</span><span>Good</span><span>Excellent</span>';
+}
+
+function legendNote(heat: string, metric: string): string {
+  if (heat.startsWith('Viewing') && metric === 'Angle') {
+    return 'Horizontal off-axis angle. Pass ≤30°, warning 30–45°, fail >45°. Same viewing engine as validation.';
+  }
+  if (heat.includes('speaker')) {
+    return 'Geometric / catalog dispersion. Not room-acoustic SPL prediction.';
+  }
+  if (heat.includes('Mic')) {
+    return 'Catalog pickup radius / beam. Not polar-pattern physics.';
+  }
+  if (heat.includes('Camera')) {
+    return 'Catalog horizontal FOV frustum. Vertical FOV only if in catalog.';
+  }
+  return 'Continuous floor field from sampled analysis. Furniture footprints are excluded.';
 }

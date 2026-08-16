@@ -28,11 +28,11 @@ const micMat = new THREE.MeshStandardMaterial({ color: 0xd8d5cf, roughness: 0.4,
 const cameraMat = new THREE.MeshStandardMaterial({ color: 0x1c1c1e, roughness: 0.3, metalness: 0.6 });
 const genericMat = new THREE.MeshStandardMaterial({ color: 0x8a8478, roughness: 0.6 });
 
-const selectedOutlineMat = new THREE.MeshBasicMaterial({ color: 0x2f8cff, wireframe: true });
+const selectedOutlineMat = new THREE.LineBasicMaterial({ color: 0x2f8cff });
 
-function buildDisplay(widthM: number, heightM: number): THREE.Group {
+function buildDisplay(widthM: number, heightM: number, depthM: number): THREE.Group {
   const g = new THREE.Group();
-  const depth = 0.06;
+  const depth = Math.max(0.04, depthM || 0.06);
   const body = new THREE.Mesh(new THREE.BoxGeometry(widthM, heightM, depth), displayBodyMat);
   body.castShadow = true;
   const screen = new THREE.Mesh(
@@ -40,35 +40,59 @@ function buildDisplay(widthM: number, heightM: number): THREE.Group {
     displayScreenMat
   );
   screen.position.z = depth / 2 + 0.001;
-  const mount = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.08), mountMat);
+  const mount = new THREE.Mesh(new THREE.BoxGeometry(Math.min(0.32, widthM * 0.2), 0.2, 0.08), mountMat);
   mount.position.z = -depth / 2 - 0.03;
   g.add(body, screen, mount);
   return g;
 }
 
-function buildSpeaker(): THREE.Group {
+function buildSpeaker(widthM: number, heightM: number, depthM: number, mount?: string): THREE.Group {
   const g = new THREE.Group();
-  const box = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.1, 24), speakerMat);
-  box.rotation.x = Math.PI / 2;
-  box.castShadow = true;
-  g.add(box);
+  const w = widthM || 0.22;
+  const h = heightM || 0.1;
+  const d = depthM || 0.22;
+  if (mount === 'ceiling' || mount === 'pendant') {
+    const r = Math.max(0.08, Math.max(w, d) / 2);
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(r, r, Math.max(0.04, h), 24), speakerMat);
+    disc.castShadow = true;
+    const grille = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.72, r * 0.72, Math.max(0.02, h * 0.4), 20), mountMat);
+    grille.position.y = -Math.max(0.02, h * 0.35);
+    g.add(disc, grille);
+  } else {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), speakerMat);
+    box.castShadow = true;
+    g.add(box);
+  }
   return g;
 }
 
-function buildMicrophone(): THREE.Group {
+function buildMicrophone(widthM: number, heightM: number, mount?: string): THREE.Group {
   const g = new THREE.Group();
-  const puck = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.02, 20), micMat);
-  puck.castShadow = true;
-  g.add(puck);
+  const r = Math.max(0.04, (widthM || 0.12) / 2);
+  if (mount === 'ceiling') {
+    const canopy = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.03, 20), micMat);
+    const drop = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.12, 8), mountMat);
+    drop.position.y = -0.07;
+    canopy.castShadow = true;
+    g.add(canopy, drop);
+  } else {
+    const puck = new THREE.Mesh(new THREE.CylinderGeometry(r, r, Math.max(0.02, heightM || 0.025), 20), micMat);
+    puck.castShadow = true;
+    g.add(puck);
+  }
   return g;
 }
 
-function buildCamera(): THREE.Group {
+function buildCamera(widthM: number, heightM: number, depthM: number): THREE.Group {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.18), cameraMat);
-  const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.05, 16), cameraMat);
+  const w = widthM || 0.12;
+  const h = heightM || 0.08;
+  const d = depthM || 0.18;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), cameraMat);
+  const lensR = Math.min(w, h) * 0.28;
+  const lens = new THREE.Mesh(new THREE.CylinderGeometry(lensR, lensR, Math.max(0.03, d * 0.28), 16), cameraMat);
   lens.rotation.x = Math.PI / 2;
-  lens.position.z = 0.12;
+  lens.position.z = d / 2 + 0.01;
   body.castShadow = true;
   g.add(body, lens);
   return g;
@@ -99,16 +123,21 @@ export function renderEquipment(
     let mesh: THREE.Group;
     switch (product.category) {
       case 'display':
-        mesh = buildDisplay(product.physical.width, product.physical.height);
+        mesh = buildDisplay(product.physical.width, product.physical.height, product.physical.depth);
         break;
       case 'speaker':
-        mesh = buildSpeaker();
+        mesh = buildSpeaker(
+          product.physical.width,
+          product.physical.height,
+          product.physical.depth,
+          product.speaker?.mount
+        );
         break;
       case 'microphone':
-        mesh = buildMicrophone();
+        mesh = buildMicrophone(product.physical.width, product.physical.height, product.microphone?.mount);
         break;
       case 'camera':
-        mesh = buildCamera();
+        mesh = buildCamera(product.physical.width, product.physical.height, product.physical.depth);
         break;
       default: {
         const g = new THREE.Group();
@@ -142,8 +171,8 @@ export function renderEquipment(
         if ((obj as THREE.Mesh).isMesh) targets.push(obj as THREE.Mesh);
       });
       targets.forEach((obj) => {
-        const outline = new THREE.Mesh(obj.geometry, selectedOutlineMat);
-        outline.scale.setScalar(1.04);
+        const outline = new THREE.LineSegments(new THREE.EdgesGeometry(obj.geometry), selectedOutlineMat);
+        outline.scale.setScalar(1.02);
         obj.add(outline);
       });
     }

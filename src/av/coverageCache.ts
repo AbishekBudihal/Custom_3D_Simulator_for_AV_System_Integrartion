@@ -17,7 +17,10 @@ export function cachedCoverage(
   room: RoomModel,
   display: DisplayPlacement,
   obstacles: Obstacle[],
-  quality: SamplingQuality
+  quality: SamplingQuality,
+  metric: import('./DisplayCoverageEngine').DisplayHeatmapMetric = 'overall',
+  tables: unknown[] = [],
+  racks: unknown[] = []
 ): { grid: CoverageGrid; image: HeatmapImage } {
   const key = JSON.stringify({
     layer: 'display',
@@ -25,7 +28,20 @@ export function cachedCoverage(
     d: room.depth,
     quality,
     display,
-    obstacles
+    obstacles,
+    metric,
+    tables,
+    racks
   });
-  return memo.get(key, () => sampleDisplayCoverage(room, display, obstacles, quality));
+  return memo.get(key, () =>
+    sampleDisplayCoverage(
+      room,
+      display,
+      obstacles,
+      quality,
+      metric,
+      tables as import('../room/SeatingGenerator').TableSpec[],
+      racks as import('./AVRack').AVRack[]
+    )
+  );
 }

@@ -7,6 +7,7 @@ function emptySnap(): AppStateSnapshot {
     room: createDefaultRoom('conference'),
     seats: [{ id: 'S1', row: 1, indexInRow: 1, x: 0, z: 0, facing: 0, hasTable: false }],
     tables: [],
+    racks: [],
     equipment: [],
     connections: [],
     routes: [],

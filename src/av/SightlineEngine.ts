@@ -29,6 +29,14 @@ export interface SightlineTarget {
   y: number; // display center height
 }
 
+export interface SightlineHit {
+  obstacleId: string;
+  x: number;
+  y: number;
+  z: number;
+  t: number;
+}
+
 /**
  * Simple ray-vs-cylinder occlusion test in the vertical plane
  * containing the viewer->display line. An obstacle blocks the
@@ -41,35 +49,42 @@ export function evaluateSightline(
   target: SightlineTarget,
   obstacles: Obstacle[]
 ): EngineeringResult<'clear' | 'blocked'> {
+  return evaluateSightlineDetailed(viewer, target, obstacles).result;
+}
+
+export function evaluateSightlineDetailed(
+  viewer: SightlineViewer,
+  target: SightlineTarget,
+  obstacles: Obstacle[]
+): { result: EngineeringResult<'clear' | 'blocked'>; hit: SightlineHit | null } {
   const dx = target.x - viewer.x;
   const dz = target.z - viewer.z;
   const totalDist = Math.hypot(dx, dz) || 1e-6;
 
   let blocking: Obstacle | null = null;
+  let hitT = 0;
 
   for (const obs of obstacles) {
-    // Project obstacle onto the viewer->target line to find how far along (0..1) it sits
     const ox = obs.x - viewer.x;
     const oz = obs.z - viewer.z;
     const t = (ox * dx + oz * dz) / (totalDist * totalDist);
-    if (t <= 0.02 || t >= 0.98) continue; // ignore obstacles at/behind the endpoints
+    if (t <= 0.02 || t >= 0.98) continue;
 
-    // Perpendicular distance from obstacle center to the line
     const projX = viewer.x + t * dx;
     const projZ = viewer.z + t * dz;
     const perpDist = Math.hypot(obs.x - projX, obs.z - projZ);
     if (perpDist > obs.radius) continue;
 
-    // Height of the line-of-sight at this point along the ray
     const losHeight = viewer.eyeHeightM + t * (target.y - viewer.eyeHeightM);
     if (losHeight < obs.topHeightM) {
       blocking = obs;
+      hitT = t;
       break;
     }
   }
 
   const status: CheckStatus = blocking ? 'fail' : 'pass';
-  return {
+  const result: EngineeringResult<'clear' | 'blocked'> = {
     status,
     value: blocking ? 'blocked' : 'clear',
     unit: '',
@@ -78,6 +93,16 @@ export function evaluateSightline(
       : 'Line-of-sight ray from viewer eye point to display center does not intersect any registered obstacle.',
     provenance: 'calculated'
   };
+  const hit = blocking
+    ? {
+        obstacleId: blocking.id,
+        x: viewer.x + hitT * dx,
+        z: viewer.z + hitT * dz,
+        y: viewer.eyeHeightM + hitT * (target.y - viewer.eyeHeightM),
+        t: hitT
+      }
+    : null;
+  return { result, hit };
 }
 
 /**

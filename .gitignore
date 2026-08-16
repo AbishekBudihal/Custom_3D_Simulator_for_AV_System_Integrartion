@@ -3,8 +3,11 @@ dist/
 .DS_Store
 Thumbs.db
 *.local
+.env
+.env.*
 .vscode/
 .idea/
 coverage/
 .vite/
+*.tsbuildinfo
 tsconfig.tsbuildinfo

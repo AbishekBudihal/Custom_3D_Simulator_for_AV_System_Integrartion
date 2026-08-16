@@ -5,7 +5,7 @@
  */
 
 export type FindingSeverity = 'pass' | 'info' | 'warning' | 'error';
-export type FindingCategory = 'viewing' | 'display' | 'seating' | 'furniture' | 'audio' | 'microphone' | 'camera' | 'system';
+export type FindingCategory = 'viewing' | 'display' | 'seating' | 'furniture' | 'audio' | 'microphone' | 'camera' | 'system' | 'rack';
 export type FindingPriority = 'high' | 'medium' | 'low';
 
 export interface FindingMetric {
@@ -25,7 +25,7 @@ export interface ValidationFinding {
   explanation: string;
   metric?: FindingMetric;
   objectId?: string;
-  affectedObjects: Array<{ kind: 'seat' | 'equipment' | 'table'; id: string; label: string }>;
+  affectedObjects: Array<{ kind: 'seat' | 'equipment' | 'table' | 'rack'; id: string; label: string }>;
   recommendedActions: string[];
   /** Variables a future Auto Design pass could try — not an auto-fix. */
   potentialVariables: string[];
@@ -133,6 +133,8 @@ export function designSignature(input: {
   equipment: unknown;
   connections?: unknown;
   routes?: unknown;
+  racks?: unknown;
+  cableLengthLimitsM?: unknown;
 }): string {
   return JSON.stringify({
     room: input.room,
@@ -140,6 +142,8 @@ export function designSignature(input: {
     tables: input.tables,
     equipment: input.equipment,
     connections: input.connections ?? [],
-    routes: input.routes ?? []
+    routes: input.routes ?? [],
+    racks: input.racks ?? [],
+    cableLengthLimitsM: input.cableLengthLimitsM ?? {}
   });
 }

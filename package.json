@@ -2,12 +2,17 @@
   "name": "simstage-av-designer",
   "version": "0.1.0",
   "private": true,
+  "description": "Web-based AV room design and simulation: layout, viewing analysis, geometric coverage, system connectivity, and cable routing.",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AbishekBudihal/Custom_3D_Simulator_for_AV_System_Integrartion.git"
   },
   "dependencies": {
     "three": "^0.164.1"

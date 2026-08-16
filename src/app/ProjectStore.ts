@@ -26,6 +26,7 @@ export interface ProjectFile {
    *  entity) still load — they'll just come back with no tables until the
    *  user regenerates seating. */
   tables?: TableSpec[];
+  racks?: import('../av/AVRack').AVRack[];
   equipment: EquipmentInstance[];
   connections?: import('../system/SystemTypes').SystemConnection[];
   routes?: import('../system/SystemTypes').SystemRoute[];
@@ -48,6 +49,7 @@ export function serializeProject(state: AppState): ProjectFile {
     room: state.room,
     seating: state.seats,
     tables: state.tables,
+    racks: state.racks,
     equipment: state.equipment,
     connections: state.connections,
     routes: state.routes,
@@ -76,6 +78,7 @@ export function loadProjectInto(state: AppState, file: ProjectFile): void {
   state.room = file.room ? JSON.parse(JSON.stringify(file.room)) : null;
   state.seats = JSON.parse(JSON.stringify(file.seating ?? []));
   state.tables = JSON.parse(JSON.stringify(file.tables ?? []));
+  state.racks = JSON.parse(JSON.stringify(file.racks ?? []));
   state.equipment = JSON.parse(JSON.stringify(file.equipment ?? []));
   state.connections = JSON.parse(JSON.stringify(file.connections ?? []));
   state.routes = JSON.parse(JSON.stringify(file.routes ?? []));

@@ -157,6 +157,15 @@ function renderRoomStep(container: HTMLElement, state: AppState): void {
   const hf = document.createElement('div'); hf.className = 'field'; hf.innerHTML = '<label>Height (m)</label>'; hf.appendChild(hIn);
   row.append(wf, df, hf);
   dimBody.appendChild(row);
+  const dimNote = document.createElement('div');
+  dimNote.className = 'badge-note';
+  dimNote.textContent = 'Changing room size does not regenerate seating. Use Regenerating Seating when you want a new furniture layout.';
+  dimBody.appendChild(dimNote);
+  const regen = document.createElement('button');
+  regen.className = 'btn';
+  regen.textContent = 'Regenerate Seating';
+  regen.onclick = () => state.regenerateSeating(state.seats.length || state.setupDraft.capacity);
+  dimBody.appendChild(regen);
 
   const next = document.createElement('button');
   next.className = 'btn primary';
@@ -172,8 +181,16 @@ function renderSeatingStep(container: HTMLElement, state: AppState): void {
 
   const layoutSelect = document.createElement('select');
   const layouts: [SeatingLayout, string][] = [
-    ['classroom', 'Classroom'], ['boardroom', 'Boardroom'], ['theater', 'Theater'],
-    ['u_shape', 'U-Shape'], ['hollow_square', 'Hollow Square'], ['auditorium_tiered', 'Auditorium (tiered rows)']
+    ['conference', 'Conference'],
+    ['boardroom', 'Boardroom'],
+    ['training', 'Training'],
+    ['classroom', 'Classroom'],
+    ['flexible', 'Flexible'],
+    ['custom', 'Custom'],
+    ['theater', 'Theater'],
+    ['u_shape', 'U-Shape'],
+    ['hollow_square', 'Hollow Square'],
+    ['auditorium_tiered', 'Auditorium (tiered rows)']
   ];
   layouts.forEach(([val, label]) => {
     const o = document.createElement('option'); o.value = val; o.textContent = label; layoutSelect.appendChild(o);
@@ -186,7 +203,7 @@ function renderSeatingStep(container: HTMLElement, state: AppState): void {
 
   const genBtn = document.createElement('button');
   genBtn.className = 'btn primary';
-  genBtn.textContent = 'Generate Seating';
+  genBtn.textContent = 'Regenerate Seating';
   genBtn.onclick = () => {
     const cfg = defaultSeatingConfig(Number(capInput.value), layoutSelect.value as SeatingLayout);
     const { seats, tables, warnings, valid, layoutReason } = generateSeating(state.room!, cfg);
@@ -201,7 +218,7 @@ function renderSeatingStep(container: HTMLElement, state: AppState): void {
       body.appendChild(note);
       return;
     }
-    state.setSeats(seats, tables);
+    state.setSeats(seats, tables, layoutSelect.value as SeatingLayout);
     const reason = document.createElement('div');
     reason.className = 'badge-note';
     reason.textContent = layoutReason;

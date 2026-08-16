@@ -202,6 +202,7 @@ export interface MicCoverageCell {
   overall: CheckStatus;
   nearestMicId: string | null;
   nearestDistanceM: number | null;
+  score?: number;
 }
 
 export interface MicCoverageGrid {
@@ -241,7 +242,14 @@ export function sampleMicCoverage(
       z: point.z,
       overall: result.status,
       nearestMicId: result.nearestMicId,
-      nearestDistanceM: result.nearestDistanceM
+      nearestDistanceM: result.nearestDistanceM,
+      score: (() => {
+        const mic = mics.find((m) => m.id === result.nearestMicId);
+        const radius = mic?.pickupRadiusM ?? 1;
+        const d = result.nearestDistanceM ?? radius;
+        const fade = Math.max(0, 1 - d / Math.max(radius, 0.01));
+        return result.status === 'pass' ? Math.max(0.4, fade) : fade * 0.25;
+      })()
     };
   });
 

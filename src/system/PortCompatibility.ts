@@ -63,6 +63,23 @@ export function canConnectPorts(from: ResolvedPort, to: ResolvedPort): Compatibi
   };
 }
 
+export function canConnectWithCable(
+  from: ResolvedPort,
+  to: ResolvedPort,
+  cableType?: PhysicalMedium
+): CompatibilityResult {
+  const base = canConnectPorts(from, to);
+  if (!base.ok) return base;
+  if (cableType && cableType !== base.physicalMedium) {
+    return {
+      ok: false,
+      code: 'SIGNAL-004',
+      reason: `Cable ${cableType} is not catalog-compatible with ${base.physicalMedium} (${from.connector}).`
+    };
+  }
+  return base;
+}
+
 export function occupancyConflict(
   connections: SystemConnection[],
   fromInstanceId: string,
@@ -91,6 +108,32 @@ export function duplicateConnection(
       c.toInstanceId === toInstanceId &&
       c.toPortId === toPortId
   );
+}
+
+export function compatibleSources(
+  to: ResolvedPort,
+  candidates: ResolvedPort[],
+  connections: SystemConnection[]
+): ResolvedPort[] {
+  return candidates.filter((from) => {
+    if (from.instanceId === to.instanceId) return false;
+    if (!canConnectPorts(from, to).ok) return false;
+    if (occupancyConflict(connections, from.instanceId, from.id, to.instanceId, to.id)) return false;
+    return true;
+  });
+}
+
+export function compatibleDestinations(
+  from: ResolvedPort,
+  candidates: ResolvedPort[],
+  connections: SystemConnection[]
+): ResolvedPort[] {
+  return candidates.filter((to) => {
+    if (to.instanceId === from.instanceId) return false;
+    if (!canConnectPorts(from, to).ok) return false;
+    if (occupancyConflict(connections, from.instanceId, from.id, to.instanceId, to.id)) return false;
+    return true;
+  });
 }
 
 function inferTransport(connector: ResolvedPort['connector']): TransportId {

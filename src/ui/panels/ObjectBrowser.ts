@@ -22,27 +22,40 @@ export function renderObjectBrowser(container: HTMLElement, state: AppState): vo
   const doors = state.room.openings.filter((o) => o.kind === 'door').length;
   const windows = state.room.openings.filter((o) => o.kind === 'window').length;
   group(container, state, 'ROOM', [
-    { id: 'walls', label: `Walls · ${state.room.width}×${state.room.depth} m`, kind: 'none', selectId: null },
-    { id: 'doors', label: `Doors (${doors})`, kind: 'none', selectId: null },
-    { id: 'windows', label: `Windows (${windows})`, kind: 'none', selectId: null },
-    { id: 'columns', label: `Columns (${state.room.columns.length})`, kind: 'none', selectId: null }
+    { id: 'room', label: `Room · ${state.room.width}×${state.room.depth} m`, kind: 'room', selectId: 'room' },
+    { id: 'doors', label: `Door (${doors})`, kind: 'none', selectId: null },
+    { id: 'windows', label: `Windows (${windows})`, kind: 'none', selectId: null }
   ]);
 
   const furniture = [
     ...state.tables.map((t) => ({
       id: t.id,
-      label: t.id.replace(/-/g, ' '),
+      label: t.furnitureId?.includes('conference') || t.id.includes('conference') ? 'Conference Table' : t.id.replace(/-/g, ' '),
       kind: 'table' as const,
       selectId: t.id
     })),
     {
       id: 'chairs',
-      label: `Chairs (${state.seats.length})`,
+      label: `Chair × ${state.seats.length}`,
       kind: 'none' as const,
       selectId: null
     }
   ];
   group(container, state, 'FURNITURE', furniture);
+
+  if (state.racks.length) {
+    group(
+      container,
+      state,
+      'AV RACK',
+      state.racks.map((r) => ({
+        id: r.id,
+        label: `${r.kind === 'wall' ? 'Wall rack' : 'Floor rack'} · ${r.ruTotal} RU`,
+        kind: 'rack' as const,
+        selectId: r.id
+      }))
+    );
+  }
 
   const byCat = new Map<string, typeof state.equipment>();
   state.equipment.forEach((inst) => {
@@ -72,11 +85,11 @@ export function renderObjectBrowser(container: HTMLElement, state: AppState): vo
     }
   });
   if (!av.length) {
-    group(container, state, 'AV EQUIPMENT', [
+    group(container, state, 'AV', [
       { id: 'av-empty', label: 'None placed — open Catalog', kind: 'none', selectId: null }
     ]);
   } else {
-    group(container, state, 'AV EQUIPMENT', av);
+    group(container, state, 'AV', av);
   }
 
   const signalBuckets: Array<[string, string[]]> = [
@@ -87,9 +100,15 @@ export function renderObjectBrowser(container: HTMLElement, state: AppState): vo
     ['Network', ['network']],
     ['Control', ['control']]
   ];
-  const sysItems: Array<{ id: string; label: string; kind: 'equipment' | 'none'; selectId: string | null }> = [
-    { id: 'sys-conn', label: `Connections (${state.connections.length})`, kind: 'none', selectId: null }
-  ];
+  const sysItems: Array<{ id: string; label: string; kind: 'equipment' | 'none'; selectId: string | null }> = [];
+  state.connections.forEach((c) => {
+    const a = state.equipment.find((e) => e.instanceId === c.fromInstanceId)?.name ?? c.fromInstanceId;
+    const b = state.equipment.find((e) => e.instanceId === c.toInstanceId)?.name ?? c.toInstanceId;
+    sysItems.push({ id: c.id, label: `${a} → ${b} · ${c.physicalMedium}`, kind: 'none', selectId: c.id });
+  });
+  if (!state.connections.length) {
+    sysItems.push({ id: 'sys-conn', label: 'Connections (0)', kind: 'none', selectId: null });
+  }
   signalBuckets.forEach(([label, cats]) => {
     const n = state.equipment.filter((e) => cats.includes(catalog.get(e.productId)?.category ?? '')).length;
     sysItems.push({ id: `sys-${label}`, label: `${label} (${n})`, kind: 'none', selectId: null });
@@ -101,7 +120,7 @@ function group(
   container: HTMLElement,
   state: AppState,
   groupTitle: string,
-  items: Array<{ id: string; label: string; kind: 'seat' | 'equipment' | 'table' | 'none'; selectId: string | null }>
+  items: Array<{ id: string; label: string; kind: 'seat' | 'equipment' | 'table' | 'room' | 'rack' | 'none'; selectId: string | null }>
 ): void {
   const collapsed = !!state.collapsedTreeGroups[groupTitle];
   const wrap = document.createElement('div');
@@ -119,16 +138,20 @@ function group(
       const isActive =
         item.selectId != null &&
         ((state.selection.kind === item.kind && state.selection.id === item.selectId) ||
-          (item.kind === 'equipment' && state.additionalSelectedIds.includes(item.selectId)));
+          (item.kind === 'equipment' && state.additionalSelectedIds.includes(item.selectId)) ||
+          (item.kind === 'none' && state.selectedConnectionId === item.selectId));
       if (isActive) row.classList.add('active');
       const lab = document.createElement('span');
       lab.textContent = item.label;
       row.appendChild(lab);
-      if (item.selectId && item.kind !== 'none' && !item.id.startsWith('hdr-')) {
+      if (item.selectId && item.kind === 'none' && item.id.startsWith('cx-')) {
+        row.style.cursor = 'pointer';
+        row.onclick = () => state.selectConnection(item.selectId);
+      } else if (item.selectId && item.kind !== 'none' && !item.id.startsWith('hdr-')) {
         row.style.cursor = 'pointer';
         row.onclick = () => {
           state.select(item.kind, item.selectId);
-          if (item.kind === 'equipment' || item.kind === 'seat') state.requestFocus();
+          if (item.kind === 'equipment' || item.kind === 'seat' || item.kind === 'table' || item.kind === 'room' || item.kind === 'rack') state.requestFocus();
         };
         if (item.kind === 'equipment') {
           const hide = document.createElement('button');
@@ -155,7 +178,7 @@ function group(
       wrap.appendChild(row);
     });
   }
-  if (groupTitle === 'AV EQUIPMENT' && state.hiddenEquipmentIds.length) {
+  if (groupTitle === 'AV' && state.hiddenEquipmentIds.length) {
     const show = document.createElement('button');
     show.className = 'btn';
     show.textContent = 'Show all equipment';

@@ -36,6 +36,15 @@ export interface Column {
   depth: number;
 }
 
+export interface RoomZone {
+  id: string;
+  name: string;
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
+
 export interface RoomModel {
   id: string;
   width: number;   // meters, X axis
@@ -56,6 +65,9 @@ export interface RoomModel {
    * 'front', so a user override actually takes effect everywhere.
    */
   presentationWall?: 'front' | 'back' | 'left' | 'right';
+  /** Flexible/divisible rooms. Partition geometry is not simulated. */
+  divisible?: boolean;
+  zones?: RoomZone[];
 }
 
 export function createDefaultRoom(useCase: string = 'conference'): RoomModel {

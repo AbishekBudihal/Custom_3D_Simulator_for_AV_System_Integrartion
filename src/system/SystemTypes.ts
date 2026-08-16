@@ -4,7 +4,20 @@
  * Catalog describes capability; project instances + connections describe the design.
  */
 
-export type SignalType = 'VIDEO' | 'AUDIO' | 'USB' | 'NETWORK' | 'CONTROL' | 'POWER';
+export type SignalType =
+  | 'VIDEO'
+  | 'AUDIO'
+  | 'USB'
+  | 'NETWORK'
+  | 'CONTROL'
+  | 'POWER'
+  | 'SERIAL'
+  | 'GPIO'
+  | 'DANTE'
+  | 'AES67'
+  | 'SDI'
+  | 'FIBER'
+  | 'HDBASET';
 export type PortDirection = 'input' | 'output' | 'bidirectional';
 export type ConnectorId =
   | 'hdmi'
@@ -26,7 +39,20 @@ export type TransportId =
   | 'analog-mic'
   | 'analog-speaker'
   | 'ethernet';
-export type PhysicalMedium = 'HDMI' | 'DisplayPort' | 'USB' | 'USB-C' | 'Cat6' | 'Audio' | 'Speaker';
+export type PhysicalMedium =
+  | 'HDMI'
+  | 'DisplayPort'
+  | 'USB'
+  | 'USB-C'
+  | 'Cat6'
+  | 'Cat6A'
+  | 'Audio'
+  | 'Speaker'
+  | 'XLR'
+  | 'TRS'
+  | 'Fiber'
+  | 'Control'
+  | 'Power';
 
 export interface PortDefinition {
   id: string;
@@ -46,15 +72,41 @@ export interface ResolvedPort extends PortDefinition {
   origin: 'catalog' | 'connectivity';
 }
 
+export type CablePathType = 'ceiling' | 'wall' | 'rack-internal' | 'direct';
+export type CableRouteStatus = 'clear' | 'intersects-obstacle' | 'no-room';
+
+export interface CableSegment {
+  start: { x: number; y: number; z: number };
+  end: { x: number; y: number; z: number };
+  length: number;
+}
+
+/** Obstacle-aware polyline. Length is the sum of segments, not Euclidean. */
+export interface CableRoute {
+  connectionId: string;
+  segments: CableSegment[];
+  totalLength: number;
+  pathType: CablePathType;
+  status: CableRouteStatus;
+  intersectingObstacleIds: string[];
+}
+
 export interface SystemConnection {
   id: string;
+  /** Source device. Alias of the engineering graph endpoint. */
   fromInstanceId: string;
   fromPortId: string;
   toInstanceId: string;
   toPortId: string;
   signalType: SignalType;
   transport: TransportId;
+  /** Catalog-derived cable/medium. Never invented (e.g. Cat6 vs Cat6A). */
   physicalMedium: PhysicalMedium;
+  /** Same as physicalMedium unless a future catalog names a specific SKU. */
+  cableType?: PhysicalMedium;
+  /** Derived route. Recomputed from geometry; optional on disk. */
+  route?: CableRoute;
+  estimatedLengthM?: number;
 }
 
 export type CompatibilityOk = {

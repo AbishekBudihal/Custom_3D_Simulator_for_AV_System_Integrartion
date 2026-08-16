@@ -78,7 +78,32 @@ export function renderDisplayAnalysisControls(body: HTMLElement, state: AppState
   }
 
   toggleRow(body, 'Seat status', viz.seatStatus, (on) => state.setDisplayAnalysisView({ seatStatus: on }));
-  toggleRow(body, 'Viewing heatmap', viz.heatmap, (on) => state.setDisplayAnalysisView({ heatmap: on }));
+  toggleRow(body, 'Viewing heatmap', viz.heatmap, (on) => state.setDisplayAnalysisView({ heatmap: on, contours: on ? true : viz.contours }));
+  toggleRow(body, 'Contours', viz.contours, (on) => state.setDisplayAnalysisView({ contours: on }));
+
+  const met = document.createElement('div');
+  met.className = 'field';
+  const metLabel = document.createElement('label');
+  metLabel.textContent = 'Heatmap metric';
+  const metSelect = document.createElement('select');
+  (
+    [
+      ['overall', 'Overall'],
+      ['distance', 'Distance'],
+      ['angle', 'Angle'],
+      ['sightline', 'Sightline']
+    ] as const
+  ).forEach(([val, lab]) => {
+    const o = document.createElement('option');
+    o.value = val;
+    o.textContent = lab;
+    if (viz.heatmapMetric === val) o.selected = true;
+    metSelect.appendChild(o);
+  });
+  metSelect.onchange = () =>
+    state.setDisplayAnalysisView({ heatmapMetric: metSelect.value as AppState['displayAnalysis']['heatmapMetric'] });
+  met.append(metLabel, metSelect);
+  body.appendChild(met);
 
   const sl = document.createElement('div');
   sl.className = 'field';

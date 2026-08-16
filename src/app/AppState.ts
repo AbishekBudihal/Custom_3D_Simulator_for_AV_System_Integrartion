@@ -10,19 +10,24 @@
  */
 
 import type { RoomModel } from '../room/RoomModel';
-import type { Seat, TableSpec } from '../room/SeatingGenerator';
+import { defaultSeatingConfig, generateSeating, type Seat, type SeatingLayout, type TableSpec } from '../room/SeatingGenerator';
 import { clampTableCenter } from '../room/FurnitureGeometry';
+import { rotateTableSpec90, seatsAroundConferenceTable } from '../room/FurnitureRelayout';
+import type { AVRack } from '../av/AVRack';
+import { usedRackUnits } from '../av/AVRack';
 import { snapSeatPosition } from '../interaction/SnapEngine';
+import type { AlignmentGuide } from '../interaction/CadSnap';
 import type { EquipmentInstance, PlacementMode } from '../catalog/EquipmentCatalog';
 import { HistoryManager, cloneSnapshot, type AppStateSnapshot } from './HistoryManager';
 import { applyAlignCommand, type AlignCommand } from '../interaction/AlignEngine';
 import { overlayLayerForFinding } from '../av/simulation/AnalysisLayer';
 import { loadDefaultCatalog } from '../catalog/loadCatalog';
-import type { SystemConnection, SystemGroup, SystemRoute, SignalType } from '../system/SystemTypes';
+import type { SystemConnection, SystemGroup, SystemRoute, SignalType, PhysicalMedium } from '../system/SystemTypes';
 import { computeAutoLayout } from '../system/SystemLayout';
 import { isRoutableProduct } from '../system/SystemRouting';
 import { canConnectPorts, duplicateConnection, occupancyConflict } from '../system/PortCompatibility';
 import { resolveInstancePorts } from '../system/PortResolver';
+import { connectionsTouching, invalidateCableRoutes } from '../system/CableRouter';
 import { defaultQuickRequirements, type AutoDesignMode, type DesignRequirements, type DesignUseCase } from '../autodesign/DesignRequirements';
 import { generateDesign, hasManualChanges, selectedOption } from '../autodesign/DesignPipeline';
 import type { DesignOption, DesignProposal } from '../autodesign/DesignProposal';
@@ -85,7 +90,9 @@ export interface AVRequirements {
   contentSharing: boolean;
 }
 
-export type SelectionKind = 'seat' | 'equipment' | 'table' | 'none';
+export type SelectionKind = 'seat' | 'equipment' | 'table' | 'room' | 'rack' | 'none';
+export type ViewportTool = 'select' | 'move' | 'rotate' | 'measure';
+export type CameraViewPreset = 'persp' | 'top' | 'front' | 'left' | 'right';
 
 export interface Selection {
   kind: SelectionKind;
@@ -96,11 +103,15 @@ export type TransformMode = 'translate' | 'rotate';
 export type SightlineMode = 'off' | 'selected' | 'all';
 export type SamplingQuality = 'standard' | 'high';
 
+export type DisplayHeatmapMetric = 'overall' | 'distance' | 'angle' | 'sightline';
+
 export interface DisplayAnalysisView {
   enabled: boolean;
   seatStatus: boolean;
   sightlines: SightlineMode;
   heatmap: boolean;
+  contours: boolean;
+  heatmapMetric: DisplayHeatmapMetric;
   samplingQuality: SamplingQuality;
   detailsOpen: boolean;
 }
@@ -110,6 +121,7 @@ export interface MicAnalysisView {
   seatStatus: boolean;
   pickupRegions: boolean;
   heatmap: boolean;
+  contours: boolean;
   samplingQuality: SamplingQuality;
   detailsOpen: boolean;
 }
@@ -119,6 +131,7 @@ export interface AudioAnalysisView {
   seatStatus: boolean;
   coverageRegions: boolean;
   heatmap: boolean;
+  contours: boolean;
   samplingQuality: SamplingQuality;
   detailsOpen: boolean;
 }
@@ -129,6 +142,7 @@ export interface CameraAnalysisView {
   fovRegions: boolean;
   blockedSightlines: boolean;
   heatmap: boolean;
+  contours: boolean;
   samplingQuality: SamplingQuality;
   detailsOpen: boolean;
 }
@@ -158,6 +172,8 @@ export class AppState {
   /** Topology. Undoable. Not a simulation overlay. */
   connections: SystemConnection[] = [];
   routes: SystemRoute[] = [];
+  racks: AVRack[] = [];
+  lastSeatingLayout: SeatingLayout = 'boardroom';
   systemGroups: SystemGroup[] = [];
 
   selection: Selection = { kind: 'none', id: null };
@@ -173,6 +189,8 @@ export class AppState {
     seatStatus: true,
     sightlines: 'off',
     heatmap: false,
+    contours: true,
+    heatmapMetric: 'overall',
     samplingQuality: 'standard',
     detailsOpen: false
   };
@@ -183,6 +201,7 @@ export class AppState {
     seatStatus: true,
     pickupRegions: true,
     heatmap: false,
+    contours: true,
     samplingQuality: 'standard',
     detailsOpen: false
   };
@@ -192,6 +211,7 @@ export class AppState {
     seatStatus: true,
     coverageRegions: true,
     heatmap: false,
+    contours: true,
     samplingQuality: 'standard',
     detailsOpen: false
   };
@@ -202,6 +222,7 @@ export class AppState {
     fovRegions: true,
     blockedSightlines: true,
     heatmap: false,
+    contours: true,
     samplingQuality: 'standard',
     detailsOpen: false
   };
@@ -241,6 +262,12 @@ export class AppState {
   systemFilter: 'all' | SignalType = 'all';
   systemSearch = '';
   systemCanvasMode: 'edit' | 'schematic' = 'edit';
+  /** Show 3D/plan room with cable polylines instead of the schematic canvas. */
+  systemPhysicalView = false;
+  /** Draw cable routes in the room (also forced when a connection is selected). */
+  showCableRoutes = false;
+  /** Optional max run per medium. Empty = no configured limit. */
+  cableLengthLimitsM: Partial<Record<PhysicalMedium, number>> = {};
   selectedFindingId: string | null = null;
   highlightedSeatIds: string[] = [];
   highlightedTableIds: string[] = [];
@@ -258,7 +285,18 @@ export class AppState {
   autoDesignProposal: DesignProposal | null = null;
   lastAutoInstanceIds: string[] = [];
   dismissedRecommendationIds: string[] = [];
-  assistantCollapsed = false;
+  assistantCollapsed = true;
+  assistantDrawerOpen = false;
+  leftPanelCollapsed = false;
+  rightPanelCollapsed = false;
+  viewportTool: ViewportTool = 'select';
+  gridSpacingM = 0.5;
+  cameraView: CameraViewPreset = 'persp';
+  cameraViewTick = 0;
+  measurePoints: Array<{ x: number; z: number }> = [];
+  measureDistanceM: number | null = null;
+  alignmentGuides: AlignmentGuide[] = [];
+  planRotateArmed = false;
 
   private listeners: Set<Listener> = new Set();
   private history = new HistoryManager();
@@ -287,6 +325,7 @@ export class AppState {
       equipment: this.equipment,
       connections: this.connections,
       routes: this.routes,
+      racks: this.racks,
       systemGroups: this.systemGroups,
       systemLayout: this.systemLayout,
       selection: this.selection
@@ -301,6 +340,7 @@ export class AppState {
     this.equipment = cloned.equipment;
     this.connections = cloned.connections ?? [];
     this.routes = cloned.routes ?? [];
+    this.racks = cloned.racks ?? [];
     this.systemGroups = cloned.systemGroups ?? [];
     this.systemLayout = cloned.systemLayout ?? {};
     this.selection = cloned.selection;
@@ -336,6 +376,7 @@ export class AppState {
     const restored = this.history.undo(this.captureSnapshot());
     if (!restored) return;
     this.applySnapshot(restored);
+    invalidateCableRoutes();
     this.notify();
   }
 
@@ -343,6 +384,7 @@ export class AppState {
     const restored = this.history.redo(this.captureSnapshot());
     if (!restored) return;
     this.applySnapshot(restored);
+    invalidateCableRoutes();
     this.notify();
   }
 
@@ -354,14 +396,54 @@ export class AppState {
   setRoom(room: RoomModel): void {
     this.recordAndReset();
     this.room = room;
+    invalidateCableRoutes();
     this.notify();
   }
 
-  setSeats(seats: Seat[], tables: TableSpec[] = []): void {
+  setSeats(seats: Seat[], tables: TableSpec[] = [], layout?: SeatingLayout): void {
     this.recordAndReset();
     this.seats = seats;
     this.tables = tables;
+    if (layout) this.lastSeatingLayout = layout;
+    invalidateCableRoutes();
     this.notify();
+  }
+
+  setRacks(racks: AVRack[]): void {
+    this.recordAndReset();
+    this.racks = racks;
+    this.notify();
+  }
+
+  updateRack(id: string, patch: Partial<AVRack>, options: { recordHistory?: boolean } = {}): void {
+    if (options.recordHistory !== false) this.recordAndReset();
+    const idx = this.racks.findIndex((r) => r.id === id);
+    if (idx === -1) return;
+    this.racks = [...this.racks.slice(0, idx), { ...this.racks[idx], ...patch }];
+    invalidateCableRoutes();
+    this.notify();
+  }
+
+  assignEquipmentToRack(instanceId: string, rackId: string | null, rackUnits?: number): void {
+    const rack = rackId ? this.racks.find((r) => r.id === rackId) : null;
+    const inst = this.equipment.find((e) => e.instanceId === instanceId);
+    if (!inst) return;
+    const product = catalog.get(inst.productId);
+    const units = rackUnits ?? inst.rackUnits ?? product?.rackUnits;
+    if (rack && units && units > 0) {
+      const others = this.equipment.filter((e) => e.rackId === rack.id && e.instanceId !== instanceId);
+      const used = usedRackUnits(others);
+      if (used + units > rack.ruTotal) {
+        this.lastSnapNote = `Rack ${rack.id} has ${rack.ruTotal - used} RU available; device needs ${units} RU.`;
+        this.notify();
+        return;
+      }
+    }
+    this.updateEquipment(instanceId, {
+      rackId: rackId ?? undefined,
+      rackUnits: units,
+      rackPositionRU: rack && units ? usedRackUnits(this.equipment.filter((e) => e.rackId === rack.id && e.instanceId !== instanceId)) + 1 : undefined
+    });
   }
 
   addEquipment(item: EquipmentInstance): void {
@@ -381,7 +463,7 @@ export class AppState {
 
   updateEquipment(
     id: string,
-    patch: Partial<Pick<EquipmentInstance, 'position' | 'rotationY' | 'wall' | 'placementMode' | 'name' | 'origin'>>,
+    patch: Partial<Pick<EquipmentInstance, 'position' | 'rotationY' | 'wall' | 'placementMode' | 'name' | 'origin' | 'rackId' | 'rackPositionRU' | 'rackUnits'>>,
     options: { recordHistory?: boolean } = {}
   ): void {
     if (options.recordHistory !== false) this.recordAndReset();
@@ -395,6 +477,7 @@ export class AppState {
       origin: patch.origin ?? (prev.origin === 'auto' ? 'manual' : prev.origin)
     };
     this.equipment = [...this.equipment.slice(0, idx), next, ...this.equipment.slice(idx + 1)];
+    invalidateCableRoutes(connectionsTouching(this.connections, id));
     this.notify();
   }
 
@@ -403,21 +486,143 @@ export class AppState {
     const idx = this.seats.findIndex((s) => s.id === id);
     if (idx === -1) return;
     this.seats = [...this.seats.slice(0, idx), { ...this.seats[idx], ...patch }, ...this.seats.slice(idx + 1)];
+    invalidateCableRoutes();
     this.notify();
   }
 
-  updateTable(id: string, patch: Partial<Pick<TableSpec, 'centerX' | 'centerZ'>>, options: { recordHistory?: boolean } = {}): void {
+  updateTable(
+    id: string,
+    patch: Partial<Pick<TableSpec, 'centerX' | 'centerZ' | 'sizeX' | 'sizeZ' | 'height' | 'thickness' | 'hasCableWell' | 'furnitureId'>>,
+    options: { recordHistory?: boolean } = {}
+  ): void {
     if (options.recordHistory !== false) this.recordAndReset();
     const idx = this.tables.findIndex((t) => t.id === id);
     if (idx === -1) return;
-    const next = { ...this.tables[idx], ...patch };
+    const prev = this.tables[idx];
+    const next = { ...prev, ...patch };
     if (this.room) {
       const snapped = snapSeatPosition(next.centerX, next.centerZ, 0.05);
       const clamped = clampTableCenter(this.room, next, snapped.x, snapped.z);
       next.centerX = clamped.x;
       next.centerZ = clamped.z;
     }
+    const dx = next.centerX - prev.centerX;
+    const dz = next.centerZ - prev.centerZ;
+    const resized =
+      (patch.sizeX != null && patch.sizeX !== prev.sizeX) || (patch.sizeZ != null && patch.sizeZ !== prev.sizeZ);
     this.tables = [...this.tables.slice(0, idx), next, ...this.tables.slice(idx + 1)];
+    if (resized && this.tables.length === 1) {
+      this.seats = seatsAroundConferenceTable(next, this.seats.length || 8);
+    } else if (!resized && (dx !== 0 || dz !== 0) && this.tables.length === 1) {
+      this.seats = this.seats.map((s) => ({ ...s, x: s.x + dx, z: s.z + dz }));
+    }
+    invalidateCableRoutes();
+    this.notify();
+  }
+
+  rotateSelectedTable90(): void {
+    if (this.selection.kind !== 'table' || !this.selection.id) return;
+    const table = this.tables.find((t) => t.id === this.selection.id);
+    if (!table) return;
+    this.recordAndReset();
+    const rotated = rotateTableSpec90(table);
+    this.updateTable(table.id, { sizeX: rotated.sizeX, sizeZ: rotated.sizeZ }, { recordHistory: false });
+  }
+
+  duplicateSelectedTable(): void {
+    if (this.selection.kind !== 'table' || !this.selection.id) return;
+    const table = this.tables.find((t) => t.id === this.selection.id);
+    if (!table) return;
+    this.recordAndReset();
+    const copy: TableSpec = {
+      ...table,
+      id: `${table.id}-copy`,
+      centerX: table.centerX + 0.6,
+      centerZ: table.centerZ + 0.6
+    };
+    this.tables = [...this.tables, copy];
+    this.selection = { kind: 'table', id: copy.id };
+    this.notify();
+  }
+
+  alignSelectedTableCenter(): void {
+    if (this.selection.kind !== 'table' || !this.selection.id) return;
+    this.updateTable(this.selection.id, { centerX: 0, centerZ: 0 });
+  }
+
+  regenerateSeating(capacity?: number, layout: SeatingLayout = this.lastSeatingLayout): void {
+    if (!this.room) return;
+    const n = capacity ?? (this.seats.length || this.setupDraft.capacity || 8);
+    const cfg = defaultSeatingConfig(n, layout);
+    const gen = generateSeating(this.room, cfg);
+    if (!gen.valid) {
+      this.lastSnapNote = 'NO VALID LAYOUT — seating was not replaced.';
+      this.notify();
+      return;
+    }
+    this.setSeats(gen.seats, gen.tables, layout);
+  }
+
+  setViewportTool(tool: ViewportTool): void {
+    this.viewportTool = tool;
+    if (tool === 'move') this.transformMode = 'translate';
+    if (tool === 'rotate') this.transformMode = 'rotate';
+    if (tool !== 'measure') {
+      this.measurePoints = [];
+      this.measureDistanceM = null;
+    }
+    this.notify();
+  }
+
+  setGridSpacing(m: number): void {
+    this.gridSpacingM = Math.max(0.05, Math.min(2, m));
+    this.notify();
+  }
+
+  setCameraView(view: CameraViewPreset | 'fit'): void {
+    if (view === 'fit') {
+      this.requestFocus();
+      return;
+    }
+    this.cameraView = view;
+    this.cameraViewTick += 1;
+    this.viewMode = '3d';
+    this.notify();
+  }
+
+  toggleLeftPanel(): void {
+    this.leftPanelCollapsed = !this.leftPanelCollapsed;
+    this.notify();
+  }
+
+  toggleRightPanel(): void {
+    this.rightPanelCollapsed = !this.rightPanelCollapsed;
+    this.notify();
+  }
+
+  addMeasurePoint(x: number, z: number): void {
+    const pts = [...this.measurePoints, { x, z }];
+    if (pts.length >= 2) {
+      const a = pts[pts.length - 2];
+      const b = pts[pts.length - 1];
+      this.measureDistanceM = Number(Math.hypot(b.x - a.x, b.z - a.z).toFixed(3));
+      this.measurePoints = [a, b];
+    } else {
+      this.measurePoints = pts;
+      this.measureDistanceM = null;
+    }
+    this.notify();
+  }
+
+  clearMeasure(): void {
+    this.measurePoints = [];
+    this.measureDistanceM = null;
+    this.alignmentGuides = [];
+    this.notify();
+  }
+
+  setAlignmentGuides(guides: AlignmentGuide[]): void {
+    this.alignmentGuides = guides;
     this.notify();
   }
 
@@ -436,6 +641,7 @@ export class AppState {
       return;
     }
     this.additionalSelectedIds = [];
+    this.selectedConnectionId = null;
     this.selection = { kind, id };
     this.notify();
   }
@@ -503,6 +709,23 @@ export class AppState {
       const id = this.selectedConnectionId;
       this.selectedConnectionId = null;
       this.removeConnection(id);
+      return;
+    }
+    if (this.selection.kind === 'rack' && this.selection.id) {
+      const id = this.selection.id;
+      this.recordAndReset();
+      this.racks = this.racks.filter((r) => r.id !== id);
+      this.equipment = this.equipment.map((e) => (e.rackId === id ? { ...e, rackId: undefined, rackPositionRU: undefined } : e));
+      this.selection = { kind: 'none', id: null };
+      this.notify();
+      return;
+    }
+    if (this.selection.kind === 'table' && this.selection.id) {
+      const id = this.selection.id;
+      this.recordAndReset();
+      this.tables = this.tables.filter((t) => t.id !== id);
+      this.selection = { kind: 'none', id: null };
+      this.notify();
       return;
     }
     if (this.selection.kind === 'equipment') {
@@ -646,6 +869,65 @@ export class AppState {
 
   disableCameraAnalysis(): void {
     this.cameraAnalysis = { ...this.cameraAnalysis, enabled: false };
+    this.notify();
+  }
+
+  analyzeEquipment(instanceId: string): void {
+    const product = catalog.get(this.equipment.find((e) => e.instanceId === instanceId)?.productId ?? '');
+    const cat = product?.category;
+    this.setWorkspaceMode('simulate');
+    this.select('equipment', instanceId);
+    if (cat === 'display') {
+      this.displayAnalysis = {
+        ...this.displayAnalysis,
+        enabled: true,
+        seatStatus: true,
+        heatmap: true,
+        contours: true,
+        sightlines: 'all'
+      };
+      this.micAnalysis = { ...this.micAnalysis, heatmap: false };
+      this.audioAnalysis = { ...this.audioAnalysis, heatmap: false };
+      this.cameraAnalysis = { ...this.cameraAnalysis, heatmap: false };
+    } else if (cat === 'camera') {
+      this.cameraAnalysis = {
+        ...this.cameraAnalysis,
+        enabled: true,
+        seatStatus: true,
+        fovRegions: true,
+        blockedSightlines: true,
+        heatmap: true,
+        contours: true
+      };
+      this.displayAnalysis = { ...this.displayAnalysis, heatmap: false };
+      this.micAnalysis = { ...this.micAnalysis, heatmap: false };
+      this.audioAnalysis = { ...this.audioAnalysis, heatmap: false };
+    } else if (cat === 'speaker') {
+      this.audioAnalysis = {
+        ...this.audioAnalysis,
+        enabled: true,
+        seatStatus: true,
+        coverageRegions: true,
+        heatmap: true,
+        contours: true
+      };
+      this.displayAnalysis = { ...this.displayAnalysis, heatmap: false };
+      this.micAnalysis = { ...this.micAnalysis, heatmap: false };
+      this.cameraAnalysis = { ...this.cameraAnalysis, heatmap: false };
+    } else if (cat === 'microphone') {
+      this.micAnalysis = {
+        ...this.micAnalysis,
+        enabled: true,
+        seatStatus: true,
+        pickupRegions: true,
+        heatmap: true,
+        contours: true
+      };
+      this.displayAnalysis = { ...this.displayAnalysis, heatmap: false };
+      this.audioAnalysis = { ...this.audioAnalysis, heatmap: false };
+      this.cameraAnalysis = { ...this.cameraAnalysis, heatmap: false };
+    }
+    this.requestFocus();
     this.notify();
   }
 
@@ -808,6 +1090,11 @@ export class AppState {
       this.micAnalysis = { ...this.micAnalysis, heatmap: false };
       this.audioAnalysis = { ...this.audioAnalysis, heatmap: false };
       this.cameraAnalysis = { ...this.cameraAnalysis, heatmap: false };
+      if ((code ?? id).startsWith('CABLE')) {
+        this.systemPhysicalView = true;
+        this.showCableRoutes = true;
+        this.viewMode = '3d';
+      }
       if (affectedEquipmentIds[0]) this.selection = { kind: 'equipment', id: affectedEquipmentIds[0] };
       this.highlightedConnectionIds = this.connections
         .filter((c) => affectedEquipmentIds.includes(c.fromInstanceId) || affectedEquipmentIds.includes(c.toInstanceId))
@@ -917,11 +1204,13 @@ export class AppState {
         toPortId,
         signalType: compat.signalType,
         transport: compat.transport,
-        physicalMedium: compat.physicalMedium
+        physicalMedium: compat.physicalMedium,
+        cableType: compat.physicalMedium
       }
     ];
     this.lastSystemError = '';
     this.systemConnectFrom = null;
+    invalidateCableRoutes([this.connections[this.connections.length - 1]!.id]);
     this.notify();
     return true;
   }
@@ -929,6 +1218,8 @@ export class AppState {
   removeConnection(id: string): void {
     this.recordAndReset();
     this.connections = this.connections.filter((c) => c.id !== id);
+    invalidateCableRoutes([id]);
+    if (this.selectedConnectionId === id) this.selectedConnectionId = null;
     this.notify();
   }
 
@@ -1004,6 +1295,51 @@ export class AppState {
   selectConnection(id: string | null): void {
     this.selectedConnectionId = id;
     this.selectedPathId = null;
+    if (id) {
+      this.selection = { kind: 'none', id: null };
+      this.additionalSelectedIds = [];
+    }
+    this.notify();
+  }
+
+  setSystemPhysicalView(on: boolean): void {
+    this.systemPhysicalView = on;
+    if (on) this.viewMode = '3d';
+    this.notify();
+  }
+
+  setShowCableRoutes(on: boolean): void {
+    this.showCableRoutes = on;
+    this.notify();
+  }
+
+  setCableLengthLimit(medium: PhysicalMedium, meters: number | null): void {
+    const next = { ...this.cableLengthLimitsM };
+    if (meters == null) delete next[medium];
+    else next[medium] = meters;
+    this.cableLengthLimitsM = next;
+    this.notify();
+  }
+
+  showConnectionRoute(id: string): void {
+    this.selectedConnectionId = id;
+    this.showCableRoutes = true;
+    this.systemPhysicalView = true;
+    this.viewMode = '3d';
+    this.workspaceMode = 'system';
+    this.shellNav = 'system';
+    this.notify();
+  }
+
+  focusConnectionEndpoint(end: 'source' | 'destination'): void {
+    const c = this.connections.find((x) => x.id === this.selectedConnectionId);
+    if (!c) return;
+    const id = end === 'source' ? c.fromInstanceId : c.toInstanceId;
+    this.selectedConnectionId = null;
+    this.selection = { kind: 'equipment', id };
+    this.viewMode = '3d';
+    this.systemPhysicalView = true;
+    this.requestFocus();
     this.notify();
   }
 
@@ -1135,8 +1471,15 @@ export class AppState {
     this.notify();
   }
 
+  toggleAssistantDrawer(): void {
+    this.assistantDrawerOpen = !this.assistantDrawerOpen;
+    this.assistantCollapsed = !this.assistantDrawerOpen;
+    this.notify();
+  }
+
   toggleAssistantCollapsed(): void {
-    this.assistantCollapsed = !this.assistantCollapsed;
+    this.assistantDrawerOpen = !this.assistantDrawerOpen;
+    this.assistantCollapsed = !this.assistantDrawerOpen;
     this.notify();
   }
 
@@ -1172,6 +1515,7 @@ export class AppState {
     this.room = option.room;
     this.seats = option.seats;
     this.tables = option.tables;
+    this.racks = option.racks ? option.racks.map((r) => ({ ...r })) : [];
     this.equipment = option.equipment.map((e) => ({ ...e }));
     this.connections = option.connections.map((c) => ({ ...c }));
     this.routes = option.routes.map((r) => ({ ...r }));

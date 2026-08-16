@@ -159,6 +159,8 @@ export interface EquipmentProduct {
   source?: string;
   datasheetUrl?: string;
   modelAsset?: string; // path to .glb, if a real model exists
+  /** Catalog rack units. Omit when unknown — do not invent. */
+  rackUnits?: number;
 }
 
 export type PlacementMode = 'smart' | 'manual';
@@ -176,6 +178,12 @@ export interface EquipmentInstance {
   /** Whether this position came from the suggestion engine or was manually edited. */
   placementMode?: PlacementMode;
   origin?: EquipmentOrigin;
+  /** Assigned AV rack. Optional. */
+  rackId?: string;
+  /** Bottom RU index (1-based). Optional. */
+  rackPositionRU?: number;
+  /** Consumed RU. Only when catalog or user provides it — never invented. */
+  rackUnits?: number;
 }
 
 export class EquipmentCatalog {

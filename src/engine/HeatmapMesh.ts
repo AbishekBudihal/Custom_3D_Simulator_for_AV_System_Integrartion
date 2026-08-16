@@ -23,14 +23,14 @@ export function addFloorHeatmap(
 ): THREE.Mesh | null {
   if (image.dataUrl) {
     const tex = new THREE.TextureLoader().load(image.dataUrl);
-    tex.magFilter = THREE.NearestFilter;
-    tex.minFilter = THREE.NearestFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearFilter;
     tex.colorSpace = THREE.SRGBColorSpace;
     const mat = new THREE.MeshBasicMaterial({
       map: tex,
       transparent: true,
       depthWrite: false,
-      opacity: 0.72,
+      opacity: 0.55,
       side: THREE.DoubleSide
     });
     const plane = new THREE.Mesh(new THREE.PlaneGeometry(room.width, room.depth), mat);

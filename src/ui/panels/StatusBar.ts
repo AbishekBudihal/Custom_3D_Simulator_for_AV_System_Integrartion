@@ -13,9 +13,9 @@ export function renderStatusBar(container: HTMLElement, state: AppState): void {
   parts.push(state.room ? `${state.room.width.toFixed(1)} × ${state.room.depth.toFixed(1)} × ${state.room.height.toFixed(1)} m` : 'No room');
   parts.push(`Seats ${state.seats.length}`);
   parts.push(sel);
-  parts.push('Snap 0.05 m');
+  parts.push(`Snap ${state.gridSpacingM.toFixed(2)} m`);
   parts.push('Units m');
-  parts.push(`View ${state.viewMode.toUpperCase()}`);
+  if (state.selectedConnectionId) parts.push(`Connection ${state.selectedConnectionId}`);
   parts.push(`✓ ${report.summary.passCount}  ⚠ ${report.summary.warningCount}  ✕ ${report.summary.errorCount}`);
   if (delta?.message) parts.push(delta.message);
   if (state.lastSnapNote) parts.push(state.lastSnapNote);

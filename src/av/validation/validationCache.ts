@@ -23,7 +23,9 @@ export function validationReportFor(state: AppState): ValidationReport {
     tables: state.tables,
     equipment: state.equipment,
     connections: state.connections,
-    routes: state.routes
+    routes: state.routes,
+    racks: state.racks,
+    cableLengthLimitsM: state.cableLengthLimitsM
   });
   if (sig === lastSig && lastReport) return lastReport;
   const prev = lastSummary;
@@ -34,7 +36,9 @@ export function validationReportFor(state: AppState): ValidationReport {
     equipment: state.equipment,
     connections: state.connections,
     routes: state.routes,
-    catalog
+    racks: state.racks,
+    catalog,
+    cableLengthLimitsM: state.cableLengthLimitsM
   });
   lastDelta = compareSummaries(prev, report.summary);
   lastSig = sig;
@@ -61,6 +65,7 @@ export function validationReportFromStateLike(state: {
   equipment: AppState['equipment'];
   connections?: AppState['connections'];
   routes?: AppState['routes'];
+  racks?: AppState['racks'];
 }): ValidationReport {
   return runDesignValidation({
     room: state.room,
@@ -69,6 +74,7 @@ export function validationReportFromStateLike(state: {
     equipment: state.equipment,
     connections: state.connections ?? [],
     routes: state.routes ?? [],
+    racks: state.racks ?? [],
     catalog
   });
 }

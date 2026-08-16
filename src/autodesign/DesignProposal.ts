@@ -6,6 +6,7 @@ import type { ValidationSummary } from '../av/validation/ValidationTypes';
 import type { DesignRequirements } from './DesignRequirements';
 import type { RequirementIssue } from './validateRequirements';
 import type { DataCompleteness as Completeness } from './CatalogCandidates';
+import type { AVRack } from '../av/AVRack';
 import type { SpatialIssue } from './SpatialAudit';
 
 export interface ProductPick {
@@ -37,6 +38,7 @@ export interface DesignOption {
   room: RoomModel;
   seats: Seat[];
   tables: TableSpec[];
+  racks?: AVRack[];
   equipment: EquipmentInstance[];
   connections: SystemConnection[];
   routes: SystemRoute[];

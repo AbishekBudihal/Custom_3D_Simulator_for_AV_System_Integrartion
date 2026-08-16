@@ -68,7 +68,15 @@ export function buildLayout(root: HTMLElement, state: AppState): LayoutRefs {
   panelLeft.dataset.panel = 'project';
   const leftHead = document.createElement('div');
   leftHead.className = 'panel-head';
-  leftHead.textContent = 'Project';
+  const leftTitle = document.createElement('span');
+  leftTitle.textContent = 'Project';
+  const leftCollapse = document.createElement('button');
+  leftCollapse.type = 'button';
+  leftCollapse.className = 'panel-collapse';
+  leftCollapse.setAttribute('aria-label', 'Collapse project panel');
+  leftCollapse.textContent = '⟨';
+  leftCollapse.onclick = () => state.toggleLeftPanel();
+  leftHead.append(leftTitle, leftCollapse);
   const objectBrowserEl = document.createElement('div');
   objectBrowserEl.className = 'object-browser';
   const designPanelEl = document.createElement('div');
@@ -87,9 +95,12 @@ export function buildLayout(root: HTMLElement, state: AppState): LayoutRefs {
     b.onclick = () => state.setViewMode(mode);
     viewSwitch.appendChild(b);
   });
+  const viewportTools = document.createElement('div');
+  viewportTools.className = 'viewport-tools';
+  viewportTools.setAttribute('aria-label', 'Viewport tools');
   const contextToolbarEl = document.createElement('div');
   contextToolbarEl.className = 'context-toolbar-wrap';
-  viewportChrome.append(viewSwitch, contextToolbarEl);
+  viewportChrome.append(viewSwitch, viewportTools, contextToolbarEl);
 
   const viewportStage = document.createElement('div');
   viewportStage.className = 'viewport-stage';
@@ -103,14 +114,25 @@ export function buildLayout(root: HTMLElement, state: AppState): LayoutRefs {
   systemContainer.className = 'system-canvas-host';
   const viewerModeLayer = document.createElement('div');
   viewportStage.append(viewportCanvas, planContainer, elevationContainer, systemContainer, viewerModeLayer);
-  viewportWrap.append(viewportChrome, viewportStage);
+  const viewBar = document.createElement('div');
+  viewBar.className = 'view-bar';
+  viewBar.setAttribute('aria-label', 'View controls');
+  viewportWrap.append(viewportChrome, viewportStage, viewBar);
 
   const panelRight = document.createElement('aside');
   panelRight.className = 'panel-right';
   panelRight.dataset.panel = 'properties';
   const rightHead = document.createElement('div');
   rightHead.className = 'panel-head';
-  rightHead.textContent = 'Properties';
+  const rightTitle = document.createElement('span');
+  rightTitle.textContent = 'Properties';
+  const rightCollapse = document.createElement('button');
+  rightCollapse.type = 'button';
+  rightCollapse.className = 'panel-collapse';
+  rightCollapse.setAttribute('aria-label', 'Collapse properties panel');
+  rightCollapse.textContent = '⟩';
+  rightCollapse.onclick = () => state.toggleRightPanel();
+  rightHead.append(rightTitle, rightCollapse);
   const inspectorHost = document.createElement('div');
   inspectorHost.className = 'inspector-host';
   panelRight.append(rightHead, inspectorHost);
@@ -166,6 +188,44 @@ export function buildLayout(root: HTMLElement, state: AppState): LayoutRefs {
     }
   }
 
+  function renderAnalysisLegend(): void {
+    let el = viewportStage.querySelector('.analysis-legend-hud') as HTMLElement | null;
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'analysis-legend-hud';
+      viewportStage.appendChild(el);
+    }
+    const d = state.displayAnalysis;
+    const m = state.micAnalysis;
+    const a = state.audioAnalysis;
+    const c = state.cameraAnalysis;
+    const heat =
+      (d.enabled && d.heatmap && 'Viewing quality') ||
+      (c.enabled && c.heatmap && 'Camera FOV coverage') ||
+      (a.enabled && a.heatmap && 'Geometric speaker coverage') ||
+      (m.enabled && m.heatmap && 'Mic pickup (geometric)') ||
+      null;
+    if (!heat) {
+      el.style.display = 'none';
+      return;
+    }
+    el.style.display = '';
+    const metric =
+      d.enabled && d.heatmap
+        ? d.heatmapMetric === 'distance'
+          ? 'Distance'
+          : d.heatmapMetric === 'angle'
+            ? 'Angle'
+            : d.heatmapMetric === 'sightline'
+              ? 'Sightline'
+              : 'Overall'
+        : '';
+    el.innerHTML = `<div class="analysis-legend-title">${heat}${metric ? ` · ${metric}` : ''}</div>
+      <div class="analysis-legend-bar"></div>
+      <div class="analysis-legend-labels"><span>Poor</span><span>Marginal</span><span>Good</span><span>Excellent</span></div>
+      <div class="muted">Continuous floor field from sampled analysis. Furniture footprints are excluded.</div>`;
+  }
+
   function renderAll(): void {
     renderModeSwitch();
     projectName.value = state.project.name;
@@ -176,6 +236,68 @@ export function buildLayout(root: HTMLElement, state: AppState): LayoutRefs {
     complexity.title = 'Same project. Beginner hides extra engineering chrome.';
     complexity.onclick = () => state.setUiComplexity(state.uiComplexity === 'beginner' ? 'pro' : 'beginner');
     panelLeft.classList.toggle('beginner', state.uiComplexity === 'beginner');
+    panelLeft.classList.toggle('collapsed', state.leftPanelCollapsed);
+    panelRight.classList.toggle('collapsed', state.rightPanelCollapsed);
+    leftCollapse.textContent = state.leftPanelCollapsed ? '⟩' : '⟨';
+    rightCollapse.textContent = state.rightPanelCollapsed ? '⟨' : '⟩';
+
+    viewportTools.innerHTML = '';
+    ([['select', 'Select'], ['move', 'Move'], ['rotate', 'Rotate'], ['measure', 'Measure']] as const).forEach(([id, label]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.className = state.viewportTool === id ? 'active' : '';
+      b.title = label;
+      b.onclick = () => state.setViewportTool(id);
+      viewportTools.appendChild(b);
+    });
+    const fit = document.createElement('button');
+    fit.type = 'button';
+    fit.textContent = 'Fit';
+    fit.title = 'Fit (F)';
+    fit.onclick = () => state.requestFocus();
+    viewportTools.appendChild(fit);
+
+    viewBar.innerHTML = '';
+    if (state.leftPanelCollapsed) {
+      const openL = document.createElement('button');
+      openL.type = 'button';
+      openL.textContent = 'Project';
+      openL.title = 'Show project panel';
+      openL.onclick = () => state.toggleLeftPanel();
+      viewBar.appendChild(openL);
+    }
+    if (state.rightPanelCollapsed) {
+      const openR = document.createElement('button');
+      openR.type = 'button';
+      openR.textContent = 'Properties';
+      openR.title = 'Show properties panel';
+      openR.onclick = () => state.toggleRightPanel();
+      viewBar.appendChild(openR);
+    }
+    ([['persp', 'Perspective'], ['top', 'Top'], ['front', 'Front'], ['left', 'Left'], ['right', 'Right']] as const).forEach(([id, label]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.className = state.cameraView === id ? 'active' : '';
+      b.onclick = () => state.setCameraView(id);
+      viewBar.appendChild(b);
+    });
+    const gridLab = document.createElement('label');
+    gridLab.textContent = 'Grid m';
+    const gridIn = document.createElement('input');
+    gridIn.type = 'number';
+    gridIn.step = '0.05';
+    gridIn.min = '0.05';
+    gridIn.value = String(state.gridSpacingM);
+    gridIn.title = 'Plan grid spacing';
+    gridIn.onchange = () => state.setGridSpacing(Number(gridIn.value));
+    viewBar.append(gridLab, gridIn);
+    if (state.measureDistanceM != null) {
+      const m = document.createElement('span');
+      m.textContent = `Distance ${state.measureDistanceM.toFixed(2)} m`;
+      viewBar.appendChild(m);
+    }
     const report = validationReportFor(state);
     healthChip.className = 'health-chip ' + report.summary.designStatus;
     healthChip.textContent =
@@ -191,15 +313,12 @@ export function buildLayout(root: HTMLElement, state: AppState): LayoutRefs {
     renderStatusBar(statusBar, state);
     renderContextToolbar(contextToolbarEl, state);
     renderFindingHud();
+    renderAnalysisLegend();
     renderAutoDesignOverlay(viewportStage, state);
     renderProjectSetupOverlay(viewportStage, state);
-    if (state.uiComplexity === 'pro') renderDesignAssistant(viewportStage, state);
-    else {
-      const asst = viewportStage.querySelector('.ad-assistant');
-      if (asst) asst.remove();
-    }
+    renderDesignAssistant(viewportStage, state);
 
-    const system = state.workspaceMode === 'system';
+    const system = state.workspaceMode === 'system' && !state.systemPhysicalView;
     viewportCanvas.style.display = !system && state.viewMode === '3d' ? '' : 'none';
     planContainer.style.display = !system && state.viewMode === 'plan' ? '' : 'none';
     elevationContainer.style.display = !system && state.viewMode === 'elevation' ? '' : 'none';
@@ -242,6 +361,7 @@ export function buildLayout(root: HTMLElement, state: AppState): LayoutRefs {
       e.preventDefault();
       state.deleteSelected();
     } else if (e.key === 'Escape') {
+      if (state.viewportTool === 'measure' || state.measurePoints.length) state.clearMeasure();
       if (state.setupOpen) state.closeSetup();
       else if (state.viewerMode.active) state.exitViewerMode();
       else state.select('none', null);

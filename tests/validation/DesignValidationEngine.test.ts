@@ -7,6 +7,8 @@ import { runDesignValidation, focusTargetForFinding, ensureBuiltinChecksRegister
 import { validationRegistry } from '../../src/av/validation/ValidationRegistry';
 import { BUILTIN_CHECKS } from '../../src/av/validation/builtinChecks';
 import { SYSTEM_CHECKS } from '../../src/av/validation/systemChecks';
+import { RACK_CHECKS } from '../../src/av/validation/rackChecks';
+import { CABLE_CHECKS } from '../../src/av/validation/cableChecks';
 import { resetValidationCache, validationReportFromStateLike } from '../../src/av/validation/validationCache';
 import { furnitureFingerprint } from '../../src/app/HistoryManager';
 
@@ -46,7 +48,7 @@ describe('DesignValidationEngine', () => {
 
   it('registers stable check codes', () => {
     const codes = validationRegistry.list().map((c) => c.code);
-    expect(codes).toEqual([...BUILTIN_CHECKS, ...SYSTEM_CHECKS].map((c) => c.code));
+    expect(codes).toEqual([...BUILTIN_CHECKS, ...SYSTEM_CHECKS, ...RACK_CHECKS, ...CABLE_CHECKS].map((c) => c.code));
     expect(codes).toContain('VIEW-001');
     expect(codes).toContain('DISPLAY-001');
     expect(codes).toContain('SEAT-001');
@@ -56,6 +58,10 @@ describe('DesignValidationEngine', () => {
     expect(codes).toContain('AUDIO-003');
     expect(codes).toContain('CAM-001');
     expect(codes).toContain('CAM-003');
+    expect(codes).toContain('RACK-001');
+    expect(codes).toContain('RACK-003');
+    expect(codes).toContain('CABLE-001');
+    expect(codes).toContain('CABLE-002');
   });
 
   it('emits DISPLAY-001 ERROR when no display is placed', () => {

@@ -6,7 +6,11 @@
 import type { EquipmentCatalog, EquipmentInstance, EquipmentProduct } from '../catalog/EquipmentCatalog';
 import { createDefaultRoom, type RoomModel } from '../room/RoomModel';
 import { defaultSeatingConfig, generateSeating, type Seat, type TableSpec } from '../room/SeatingGenerator';
-import { layoutForUseCase, type DesignRequirements } from './DesignRequirements';
+import { type DesignRequirements } from './DesignRequirements';
+import { resolveSeatingLayout } from '../room/SeatingStrategy';
+import { tableAabb, chairAabb } from '../room/FurnitureGeometry';
+import { placeAvRack } from '../av/RackPlacement';
+import { splitDivisibleZones } from '../room/RoomZones';
 import { snapCeilingMounted, displayOverlapsOpening } from '../interaction/SnapEngine';
 import { getPresentationWall, wallMountPoint, computeWallCandidates, presentationRotation, type WallKey } from '../room/RoomGeometry';
 import {
@@ -72,10 +76,11 @@ function resolveRoom(ctx: ProjectDesignContext, req: DesignRequirements): RoomMo
   base.useCase = req.useCase;
   if (req.constraints.presentationWall) base.presentationWall = req.constraints.presentationWall;
   else if (!base.presentationWall) {
-    // Prefer the short walls so conference tables run along the longer axis
-    // (viewing depth). Avoid inferring a side-wall presentation that swaps
-    // a 8×10 room into a 6 m viewing depth.
     base.presentationWall = base.depth >= base.width ? 'front' : 'left';
+  }
+  if (req.room.divisible) {
+    base.divisible = true;
+    base.zones = splitDivisibleZones(base);
   }
   return clampOpenings(base);
 }
@@ -84,7 +89,15 @@ function resolveSeating(
   ctx: ProjectDesignContext,
   req: DesignRequirements,
   room: RoomModel
-): { seats: Seat[]; tables: TableSpec[]; warnings: string[]; reused: boolean; valid: boolean; layoutReason: string } {
+): {
+  seats: Seat[];
+  tables: TableSpec[];
+  warnings: string[];
+  reused: boolean;
+  valid: boolean;
+  layoutReason: string;
+  layout: ReturnType<typeof resolveSeatingLayout>;
+} {
   if (req.constraints.keepExistingSeating && ctx.seats.length) {
     return {
       seats: ctx.seats,
@@ -92,13 +105,14 @@ function resolveSeating(
       warnings: [],
       reused: true,
       valid: true,
-      layoutReason: 'Existing seating and TableSpec preserved.'
+      layoutReason: 'Existing seating and TableSpec preserved.',
+      layout: req.seating.layout === 'auto' ? 'boardroom' : req.seating.layout
     };
   }
-  const layout = req.seating.layout === 'auto' ? layoutForUseCase(req.useCase) : req.seating.layout;
+  const layout = resolveSeatingLayout(room, req.seating.count!, req.seating.layout, req.useCase);
   const cfg = defaultSeatingConfig(req.seating.count!, layout);
   const gen = generateSeating(room, cfg);
-  return { ...gen, reused: false };
+  return { ...gen, reused: false, layout };
 }
 
 function desiredDisplayCount(req: DesignRequirements, dualFits: boolean): number {
@@ -451,9 +465,10 @@ function optionFromParts(
   why: string[],
   topologyNotes: string[],
   connections: SystemConnection[],
-  routes: SystemRoute[]
+  routes: SystemRoute[],
+  racks: import('../av/AVRack').AVRack[] = []
 ): DesignOption {
-  const report = runDesignValidation({ room, seats, tables, equipment, catalog, connections, routes });
+  const report = runDesignValidation({ room, seats, tables, equipment, catalog, connections, routes, racks });
   return {
     id,
     label,
@@ -461,6 +476,7 @@ function optionFromParts(
     room,
     seats,
     tables,
+    racks,
     equipment,
     connections,
     routes,
@@ -511,6 +527,17 @@ export function generateDesign(
   });
 
   const seating = resolveSeating(ctx, r, room);
+  const rackPlace = placeAvRack(room, [
+    ...seating.tables.map((t) => tableAabb(t)),
+    ...seating.seats.map((s) => chairAabb(s))
+  ]);
+  const racks = [rackPlace.rack];
+  stages.push({
+    id: 'rack',
+    title: 'Place AV rack',
+    status: rackPlace.ok ? 'done' : 'warning',
+    detail: rackPlace.note
+  });
   stages.push({
     id: 'seating',
     title: 'Generate seating',
@@ -639,9 +666,10 @@ export function generateDesign(
     );
     if (!seating.reused) {
       why.push(
-        `${layoutLabel(r)} layout selected because the project requires ${r.seating.count} participants and ${r.useCase.replace('_', ' ')}.`
+        `${layoutPretty(seating.layout)} layout selected because the project requires ${r.seating.count} participants and ${r.useCase.replace('_', ' ')}.`
       );
     }
+    why.push(`AV rack: ${rackPlace.note}`);
 
     if (skip(existing.display) || (keepEq && existingDisplays.length)) {
       equipment.push(...existingDisplays);
@@ -746,7 +774,7 @@ export function generateDesign(
       needSwitching,
       needDsp: needDsp || equipment.some((e) => catalog.get(e.productId)?.category === 'speaker')
     });
-    const allEq = [...equipment, ...topo.extraEquipment];
+    const allEq = assignKnownRuToRack([...equipment, ...topo.extraEquipment], racks[0], catalog);
     why.push(
       topo.connections.length
         ? `System: ${topo.connections.length} catalog-valid connection(s). Seat count did not select the topology.`
@@ -773,7 +801,8 @@ export function generateDesign(
       why.filter(Boolean),
       topo.notes,
       topo.connections,
-      topo.routes
+      topo.routes,
+      racks
     );
   }
 
@@ -859,11 +888,29 @@ export function generateDesign(
   };
 }
 
-function layoutLabel(r: DesignRequirements): string {
-  const layout = r.seating.layout === 'auto' ? layoutForUseCase(r.useCase) : r.seating.layout;
+function layoutPretty(layout: string): string {
   if (layout === 'classroom') return 'Classroom';
-  if (layout === 'boardroom') return 'Conference';
+  if (layout === 'boardroom' || layout === 'conference') return 'Conference';
+  if (layout === 'training') return 'Training';
+  if (layout === 'flexible') return 'Flexible';
   return layout;
+}
+
+function assignKnownRuToRack(
+  equipment: EquipmentInstance[],
+  rack: import('../av/AVRack').AVRack | undefined,
+  catalog: EquipmentCatalog
+): EquipmentInstance[] {
+  if (!rack) return equipment;
+  let cursor = 1;
+  return equipment.map((e) => {
+    const ru = e.rackUnits ?? catalog.get(e.productId)?.rackUnits;
+    if (!ru || ru <= 0) return e;
+    if (cursor + ru - 1 > rack.ruTotal) return e;
+    const next = { ...e, rackId: rack.id, rackUnits: ru, rackPositionRU: cursor };
+    cursor += ru;
+    return next;
+  });
 }
 
 function optionFingerprint(o: DesignOption): string {

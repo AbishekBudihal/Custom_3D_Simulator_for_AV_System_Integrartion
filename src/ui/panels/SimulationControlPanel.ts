@@ -37,23 +37,29 @@ export function renderSimulationControlPanel(container: HTMLElement, state: AppS
           sightlines: liveSight ? d.sightlines : 'off'
         });
       }],
-      ['Sightlines (selected)', liveSight, (on) => {
+      ['Sightlines (all / selected)', liveSight, (on) => {
         state.setDisplayAnalysisView({
           enabled: on || liveSeat || liveHeat,
           seatStatus: liveSeat,
           heatmap: liveHeat,
-          sightlines: on ? 'selected' : 'off'
+          sightlines: on ? (d.sightlines === 'off' ? 'all' : d.sightlines) : 'off'
         });
       }],
-      ['Heatmap', liveHeat, (on) => {
+      ['Coverage heatmap', liveHeat, (on) => {
         state.setDisplayAnalysisView({
           enabled: on || liveSeat || liveSight,
           seatStatus: liveSeat,
           heatmap: on,
+          contours: on ? true : d.contours,
           sightlines: liveSight ? d.sightlines : 'off'
         });
-      }]
+      }],
+      ['Contours', d.enabled && d.contours, (on) => state.setDisplayAnalysisView({ contours: on })]
     ]);
+    if (d.enabled && d.heatmap) {
+      metricSelect(container, d.heatmapMetric, (m) => state.setDisplayAnalysisView({ heatmapMetric: m }));
+      legend(container, 'Viewing quality', 'Excellent / Good / Marginal / Poor — from the same AVIXA-style viewing engine as validation. Not a second model.');
+    }
   } else {
     emptyHint(container, 'No display placed', 'Add a catalog display to run viewing analysis.');
   }
@@ -71,9 +77,11 @@ export function renderSimulationControlPanel(container: HTMLElement, state: AppS
         state.setMicAnalysisView({ enabled: on || livePickup || liveHeat, pickupRegions: livePickup, seatStatus: on, heatmap: liveHeat });
       }],
       ['Heatmap', liveHeat, (on) => {
-        state.setMicAnalysisView({ enabled: on || livePickup || liveSeat, pickupRegions: livePickup, seatStatus: liveSeat, heatmap: on });
-      }]
+        state.setMicAnalysisView({ enabled: on || livePickup || liveSeat, pickupRegions: livePickup, seatStatus: liveSeat, heatmap: on, contours: on ? true : m.contours });
+      }],
+      ['Contours', m.enabled && m.contours, (on) => state.setMicAnalysisView({ contours: on })]
     ]);
+    if (m.enabled && m.heatmap) legend(container, 'Pickup (geometric)', 'Inside catalog pickup radius / beam. Not polar-pattern physics.');
   } else {
     emptyHint(container, 'No microphone placed', 'Add a catalog microphone to begin pickup analysis.');
   }
@@ -87,13 +95,17 @@ export function renderSimulationControlPanel(container: HTMLElement, state: AppS
       ['Coverage region', liveCov, (on) => {
         state.setAudioAnalysisView({ enabled: on || liveSeat || liveHeat, coverageRegions: on, seatStatus: liveSeat, heatmap: liveHeat });
       }],
-      ['Seat status / SPL', liveSeat, (on) => {
+      ['Seat status', liveSeat, (on) => {
         state.setAudioAnalysisView({ enabled: on || liveCov || liveHeat, coverageRegions: liveCov, seatStatus: on, heatmap: liveHeat });
       }],
-      ['Heatmap', liveHeat, (on) => {
-        state.setAudioAnalysisView({ enabled: on || liveCov || liveSeat, coverageRegions: liveCov, seatStatus: liveSeat, heatmap: on });
-      }]
+      ['Geometric coverage heatmap', liveHeat, (on) => {
+        state.setAudioAnalysisView({ enabled: on || liveCov || liveSeat, coverageRegions: liveCov, seatStatus: liveSeat, heatmap: on, contours: on ? true : a.contours });
+      }],
+      ['Contours', a.enabled && a.contours, (on) => state.setAudioAnalysisView({ contours: on })]
     ]);
+    if (a.enabled && a.heatmap) {
+      legend(container, 'Geometric coverage', 'Free-field / catalog dispersion. Not room-acoustic SPL prediction.');
+    }
   } else {
     emptyHint(container, 'No speaker placed', 'Add a catalog speaker to estimate coverage / SPL.');
   }
@@ -125,10 +137,13 @@ export function renderSimulationControlPanel(container: HTMLElement, state: AppS
           enabled: on || liveFov || liveBlock,
           fovRegions: liveFov,
           blockedSightlines: liveBlock,
-          heatmap: on
+          heatmap: on,
+          contours: on ? true : c.contours
         });
-      }]
+      }],
+      ['Contours', c.enabled && c.contours, (on) => state.setCameraAnalysisView({ contours: on })]
     ]);
+    if (c.enabled && c.heatmap) legend(container, 'FOV coverage', 'Catalog horizontal FOV frustum. Vertical FOV only if in catalog. Not photometric.');
   } else {
     emptyHint(container, 'No camera placed', 'Add a catalog camera with horizontal FOV to run frustum coverage.');
   }
@@ -153,6 +168,44 @@ function domain(
     row.append(input, document.createTextNode(' ' + label));
     container.appendChild(row);
   });
+}
+
+function legend(container: HTMLElement, title: string, note: string): void {
+  const box = document.createElement('div');
+  box.className = 'analysis-legend-panel';
+  box.innerHTML = `<div class="analysis-legend-title">${title}</div>
+    <div class="analysis-legend-bar"></div>
+    <div class="muted">${note}</div>`;
+  container.appendChild(box);
+}
+
+function metricSelect(
+  container: HTMLElement,
+  current: AppState['displayAnalysis']['heatmapMetric'],
+  set: (m: AppState['displayAnalysis']['heatmapMetric']) => void
+): void {
+  const wrap = document.createElement('div');
+  wrap.className = 'field';
+  const lab = document.createElement('label');
+  lab.textContent = 'Heatmap metric';
+  const sel = document.createElement('select');
+  (
+    [
+      ['overall', 'Overall viewing score'],
+      ['distance', 'Viewing distance'],
+      ['angle', 'Viewing angle'],
+      ['sightline', 'Sightline / visibility']
+    ] as const
+  ).forEach(([val, label]) => {
+    const o = document.createElement('option');
+    o.value = val;
+    o.textContent = label;
+    if (current === val) o.selected = true;
+    sel.appendChild(o);
+  });
+  sel.onchange = () => set(sel.value as AppState['displayAnalysis']['heatmapMetric']);
+  wrap.append(lab, sel);
+  container.appendChild(wrap);
 }
 
 function emptyHint(container: HTMLElement, title: string, body: string): void {

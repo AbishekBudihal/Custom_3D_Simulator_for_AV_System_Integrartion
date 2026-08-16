@@ -1,5 +1,4 @@
 import type { AppState } from '../../app/AppState';
-import { analyzeSeatAgainstDisplay, getActiveDisplay, projectObstacles } from '../../av/DesignAnalysis';
 import { loadDefaultCatalog } from '../../catalog/loadCatalog';
 import { snapEquipment } from '../../interaction/SnapEngine';
 import { renderDisplayAnalysisControls } from './DisplayAnalysisPanel';
@@ -9,11 +8,16 @@ import { renderCameraAnalysisControls } from './CameraAnalysisPanel';
 import { resolveInstancePorts } from '../../system/PortResolver';
 import { renderRoutingMatrix } from './RoutingMatrix';
 import { describePath, enumerateSignalPaths } from '../../system/SignalPathEngine';
-import { evaluateSeatMicCoverage } from '../../av/MicrophoneCoverageEngine';
-import { resolveProjectMicrophones, usableMicPlacements } from '../../av/MicAnalysis';
-import { analyzeSeatAudio } from '../../av/SpeakerAnalysis';
-import { analyzeSeatCamera } from '../../av/CameraAnalysis';
-import { SPL_TARGET_MAX, SPL_TARGET_MIN } from '../../av/SpeakerCoverageEngine';
+import { conferenceClearanceM } from '../../room/FurnitureRelayout';
+import { furnitureTemplate } from '../../room/FurnitureCatalog';
+import { getPresentationWall } from '../../room/RoomGeometry';
+import { validationReportFor } from '../../av/validation/validationCache';
+import { usedRackUnits } from '../../av/AVRack';
+import { inspectSeat } from '../../av/SeatInspection';
+import { compatibleDestinations, compatibleSources } from '../../system/PortCompatibility';
+import { cachedCableRoute } from '../../system/CableRouter';
+import { cableRouteContext } from '../../system/cableContext';
+import { cableTypeOf } from '../../system/CableBoq';
 
 const catalog = loadDefaultCatalog();
 
@@ -27,11 +31,39 @@ function metricRow(container: HTMLElement, label: string, value: string, statusE
   container.appendChild(row);
 }
 
-function statusPill(status: 'pass' | 'warning' | 'fail'): HTMLElement {
+function statusPill(status: 'pass' | 'warning' | 'fail' | 'info'): HTMLElement {
   const el = document.createElement('span');
-  el.className = `status-pill ${status}`;
-  el.textContent = status.toUpperCase();
+  el.className = `status-pill ${status === 'info' ? 'info' : status}`;
+  el.textContent =
+    status === 'pass' ? '✓ PASS' : status === 'warning' ? '⚠ WARNING' : status === 'fail' ? '✕ ERROR' : 'ⓘ INFO';
   return el;
+}
+
+function why(container: HTMLElement, label: string, text: string): void {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'why-link';
+  btn.textContent = label;
+  const body = document.createElement('div');
+  body.className = 'why-body';
+  body.hidden = true;
+  body.textContent = text;
+  btn.onclick = () => {
+    body.hidden = !body.hidden;
+  };
+  container.append(btn, body);
+}
+
+function section(container: HTMLElement, title: string, open = true): HTMLElement {
+  const d = document.createElement('details');
+  d.className = 'insp-section';
+  d.open = open;
+  const s = document.createElement('summary');
+  s.textContent = title;
+  const inner = document.createElement('div');
+  d.append(s, inner);
+  container.appendChild(d);
+  return inner;
 }
 
 function numField(container: HTMLElement, label: string, value: number, step: number, onChange: (v: number) => void): void {
@@ -74,9 +106,21 @@ export function renderInspectorPanel(container: HTMLElement, state: AppState): v
     return;
   }
 
+  if (state.selection.kind === 'rack' && state.selection.id) {
+    title.textContent = 'AV RACK';
+    renderRackInspector(body, state, state.selection.id);
+    return;
+  }
+
   if (state.selection.kind === 'equipment' && state.selection.id) {
     title.textContent = 'PROPERTIES';
     renderEquipmentInspector(body, state, state.selection.id);
+    return;
+  }
+
+  if (state.selection.kind === 'room') {
+    title.textContent = 'ROOM';
+    renderRoomInspector(body, state);
     return;
   }
 
@@ -84,35 +128,185 @@ export function renderInspectorPanel(container: HTMLElement, state: AppState): v
     title.textContent = 'PROPERTIES';
     const empty = document.createElement('div');
     empty.className = 'empty-state';
-    empty.innerHTML = `<div class="empty-title">No object selected</div>
-      <div class="empty-body">Select an AV object, seat, or table to inspect engineering data, position, orientation, simulation, and validation.</div>`;
-    body.appendChild(empty);
-    if (!state.room) {
-      const hint = document.createElement('div');
-      hint.className = 'badge-note';
-      hint.textContent = 'Start in Design → Room.';
-      body.appendChild(hint);
+    if (!state.equipment.length) {
+      empty.innerHTML = `<div class="empty-title">NO EQUIPMENT</div>
+        <div class="empty-body">Add your first AV device, or let Auto Design create a starting system.</div>`;
+    } else {
+      empty.innerHTML = `<div class="empty-title">No object selected</div>
+        <div class="empty-body">Select furniture or equipment in the tree, Plan, or 3D view.</div>`;
     }
+    body.appendChild(empty);
+    const catalogBtn = document.createElement('button');
+    catalogBtn.className = 'btn primary';
+    catalogBtn.textContent = 'Browse Catalog';
+    catalogBtn.onclick = () => state.setDesignTool('catalog');
+    const autoBtn = document.createElement('button');
+    autoBtn.className = 'btn';
+    autoBtn.textContent = 'Auto Design';
+    autoBtn.onclick = () => state.requestAutoDesign();
+    body.append(catalogBtn, autoBtn);
     return;
   }
+}
+
+function renderRoomInspector(body: HTMLElement, state: AppState): void {
+  const room = state.room;
+  if (!room) return;
+  const geo = section(body, 'Geometry', true);
+  numField(geo, 'Width (m)', room.width, 0.1, (v) => state.setRoom({ ...room, width: v }));
+  numField(geo, 'Length (m)', room.depth, 0.1, (v) => state.setRoom({ ...room, depth: v }));
+  numField(geo, 'Height (m)', room.height, 0.1, (v) => state.setRoom({ ...room, height: v }));
+  why(
+    geo,
+    'Why these dimensions?',
+    'Room size is architectural. Changing it recalculates validation. Seating is not regenerated until you choose Regenerating Seating.'
+  );
+  const regen = document.createElement('button');
+  regen.className = 'btn';
+  regen.textContent = 'Regenerate Seating';
+  regen.onclick = () => state.regenerateSeating();
+  body.appendChild(regen);
 }
 
 function renderTableInspector(body: HTMLElement, state: AppState, tableId: string): void {
   const table = state.tables.find((t) => t.id === tableId);
   if (!table) return;
+  const tmpl = furnitureTemplate(table.furnitureId ?? 'generic-conference');
+  const beginner = state.uiComplexity === 'beginner';
 
-  metricRow(body, 'Dimensions', `${(table.sizeX * 1000).toFixed(0)} × ${(table.sizeZ * 1000).toFixed(0)} mm`);
-  metricRow(body, 'Height', `${((table.height ?? 0.73) * 1000).toFixed(0)} mm AFF`);
-  if (table.furnitureId) metricRow(body, 'Template', table.furnitureId.replace(/generic-/, 'Generic '));
-  metricRow(body, 'Center X', `${table.centerX.toFixed(2)} m`);
-  metricRow(body, 'Center Z', `${table.centerZ.toFixed(2)} m`);
+  metricRow(body, 'Type', 'Conference');
+  metricRow(
+    body,
+    'Dimensions',
+    `${table.sizeX.toFixed(2)} × ${table.sizeZ.toFixed(2)} × ${(table.height ?? 0.73).toFixed(2)} m`
+  );
+  metricRow(body, 'Seats', String(state.seats.length));
+  if (state.room) {
+    const clear = conferenceClearanceM(state.room, table);
+    metricRow(body, 'Clearance', `${clear.toFixed(2)} m`, statusPill(clear >= 0.7 ? 'pass' : 'warning'));
+  }
+
+  why(
+    body,
+    'Why is this table this size?',
+    'Length and width come from seating capacity, seat spacing, and circulation — not from the distance between walls.'
+  );
+
+  const geo = section(body, 'Geometry', true);
+  numField(geo, 'Length (m)', table.sizeZ, 0.05, (v) => state.updateTable(tableId, { sizeZ: v }));
+  numField(geo, 'Width (m)', table.sizeX, 0.05, (v) => state.updateTable(tableId, { sizeX: v }));
+  numField(geo, 'Height (m)', table.height ?? 0.73, 0.01, (v) => state.updateTable(tableId, { height: v }));
+
+  const place = section(body, 'Placement', !beginner);
+  numField(place, 'Position X (m)', table.centerX, 0.05, (v) => state.updateTable(tableId, { centerX: v }));
+  numField(place, 'Position Z (m)', table.centerZ, 0.05, (v) => state.updateTable(tableId, { centerZ: v }));
+  metricRow(place, 'Rotation', '0° (90° steps)');
+
+  const seating = section(body, 'Seating', true);
+  metricRow(seating, 'Capacity', String(state.seats.length));
+  metricRow(seating, 'Seats per long side', String(Math.max(1, Math.ceil((state.seats.length - 1) / 2))));
+  metricRow(seating, 'End seats', state.seats.length > 6 ? '1' : '0');
+  metricRow(seating, 'Orientation', table.sizeZ >= table.sizeX ? 'Long axis along room length' : 'Rotated 90°');
+
+  if (!beginner) {
+    const eng = section(body, 'Engineering', true);
+    metricRow(eng, 'Template', table.furnitureId ?? 'generic-conference');
+    metricRow(eng, 'Chair from edge', `${tmpl.chairFromEdge} m`);
+    metricRow(eng, 'Cable well', table.hasCableWell ? 'Yes' : 'No');
+  }
+
+  const val = section(body, 'Validation', true);
+  const findings = validationReportFor(state).findings.filter(
+    (f) => f.affectedObjects.some((o) => o.id === tableId) || f.code.startsWith('FURN')
+  );
+  if (!findings.length) {
+    metricRow(val, 'Furniture', '✓ PASS', statusPill('pass'));
+  } else {
+    findings.slice(0, 6).forEach((f) => {
+      const sev = f.severity === 'error' ? 'fail' : f.severity === 'warning' ? 'warning' : f.severity === 'info' ? 'info' : 'pass';
+      metricRow(val, f.code, f.title, statusPill(sev));
+    });
+  }
+
+  const actions = document.createElement('div');
+  const edit = document.createElement('button');
+  edit.className = 'btn primary';
+  edit.textContent = 'Edit';
+  edit.onclick = () => state.setDesignTool('seating');
+  const dup = document.createElement('button');
+  dup.className = 'btn';
+  dup.textContent = 'Duplicate';
+  dup.onclick = () => state.duplicateSelectedTable();
+  const align = document.createElement('button');
+  align.className = 'btn';
+  align.textContent = 'Align';
+  align.onclick = () => state.alignSelectedTableCenter();
+  const del = document.createElement('button');
+  del.className = 'btn';
+  del.textContent = 'Delete';
+  del.onclick = () => state.deleteSelected();
+  const issue = document.createElement('button');
+  issue.className = 'btn';
+  issue.textContent = 'View Issue';
+  issue.onclick = () => state.setShellNav('validate');
+  actions.append(edit, dup, align, del, issue);
+  body.appendChild(actions);
+}
+
+function renderRackInspector(body: HTMLElement, state: AppState, rackId: string): void {
+  const rack = state.racks.find((r) => r.id === rackId);
+  if (!rack) return;
+  const assigned = state.equipment
+    .filter((e) => e.rackId === rack.id)
+    .sort((a, b) => (a.rackPositionRU ?? 0) - (b.rackPositionRU ?? 0));
+  const used = usedRackUnits(assigned);
+  metricRow(body, 'Rack type', rack.kind === 'wall' ? 'Wall-mounted' : 'Floor-standing');
+  metricRow(body, 'Height / RU', `${rack.ruTotal} RU · ${rack.height.toFixed(2)} m`);
+  metricRow(body, 'Width × depth', `${rack.width.toFixed(2)} × ${rack.depth.toFixed(2)} m`);
+  metricRow(body, 'Used RU', String(used));
+  metricRow(body, 'Available RU', String(rack.ruTotal - used));
+  metricRow(body, 'Front clearance', `${rack.frontClearance.toFixed(2)} m`);
+  metricRow(body, 'Rear clearance', `${rack.rearClearance.toFixed(2)} m`);
+  numField(body, 'Position X (m)', rack.x, 0.05, (v) => state.updateRack(rackId, { x: v }));
+  numField(body, 'Position Z (m)', rack.z, 0.05, (v) => state.updateRack(rackId, { z: v }));
+  numField(body, 'Rotation Y (°)', (rack.rotationY * 180) / Math.PI, 5, (v) =>
+    state.updateRack(rackId, { rotationY: (v * Math.PI) / 180 })
+  );
+
+  const elevTitle = document.createElement('div');
+  elevTitle.className = 'nav-section-title';
+  elevTitle.textContent = 'RACK ELEVATION';
+  body.appendChild(elevTitle);
   const note = document.createElement('div');
   note.className = 'badge-note';
-  note.textContent = 'Generic furniture template — not a manufacturer product. Placement snaps inside the room clearance envelope.';
+  note.textContent =
+    'Generated from equipment assigned to this rack. RU is never invented from category. Switch to Elevation for the diagram.';
   body.appendChild(note);
+  assigned.forEach((e) => {
+    const ru = e.rackUnits;
+    metricRow(
+      body,
+      `${e.name}`,
+      ru && ru > 0 ? `U${e.rackPositionRU ?? '—'} · ${ru} RU` : 'DATA INCOMPLETE — no RU'
+    );
+  });
+  if (!assigned.length) {
+    const empty = document.createElement('div');
+    empty.className = 'badge-note';
+    empty.textContent = `AVAILABLE ${rack.ruTotal} RU`;
+    body.appendChild(empty);
+  } else {
+    const spare = document.createElement('div');
+    spare.className = 'badge-note';
+    spare.textContent = `AVAILABLE ${rack.ruTotal - used} RU`;
+    body.appendChild(spare);
+  }
 
-  numField(body, 'Position X (m)', table.centerX, 0.05, (v) => state.updateTable(tableId, { centerX: v }));
-  numField(body, 'Position Z (m)', table.centerZ, 0.05, (v) => state.updateTable(tableId, { centerZ: v }));
+  const del = document.createElement('button');
+  del.className = 'btn';
+  del.textContent = 'Remove rack';
+  del.onclick = () => state.deleteSelected();
+  body.appendChild(del);
 }
 
 function renderSeatInspector(body: HTMLElement, state: AppState, seatId: string): void {
@@ -125,35 +319,44 @@ function renderSeatInspector(body: HTMLElement, state: AppState, seatId: string)
     state.updateSeat(seatId, { facing: (v * Math.PI) / 180 })
   );
 
-  const display = getActiveDisplay(state.equipment, catalog);
-  if (!display) {
+  const insp = inspectSeat(seat, state.equipment, catalog, state.room, state.tables);
+  metricRow(body, 'Occupant eye height', `${insp.occupant.eyeHeightM.toFixed(2)} m`);
+
+  if (!insp.display) {
     const note = document.createElement('div');
     note.className = 'inspector-empty';
     note.textContent = 'No display placed yet — add one in the Equipment step to see viewing analysis for this seat.';
     body.appendChild(note);
-    return;
-  }
-
-  const analysis = analyzeSeatAgainstDisplay(display, seat, projectObstacles(state.room, state.tables));
-
-  metricRow(body, 'Distance to display', `${analysis.distance.value} m`);
-  metricRow(body, 'Horizontal angle', `${analysis.horizontalAngle.value}°`, statusPill(analysis.horizontalAngle.status));
-  metricRow(body, 'Vertical angle', `${analysis.verticalAngle.value}°`, statusPill(analysis.verticalAngle.status));
-  metricRow(body, 'Viewing distance', `${analysis.viewingDistance.value} m`, statusPill(analysis.viewingDistance.status));
-  metricRow(body, 'Visibility', analysis.visibility.value.replace('_', ' '), statusPill(analysis.visibility.status));
-  metricRow(body, 'Sightline', analysis.sightline.value, statusPill(analysis.sightline.status));
-
-  const overall = document.createElement('div');
-  overall.className = 'badge-note';
-  overall.innerHTML = `Overall: ${statusPill(analysis.overall).outerHTML}<br><br><b>Methodology:</b> ${analysis.viewingDistance.method}`;
-  body.appendChild(overall);
-
-  if (analysis.sightline.status === 'fail') {
-    const blocked = document.createElement('div');
-    blocked.className = 'badge-note';
-    blocked.style.color = 'var(--danger)';
-    blocked.textContent = analysis.sightline.method;
-    body.appendChild(blocked);
+  } else {
+    const analysis = insp.display;
+    const dt = section(body, 'DISPLAY', true);
+    metricRow(dt, 'Distance', `${analysis.distance.value} m`);
+    metricRow(dt, 'Horizontal angle', `${analysis.horizontalAngle.value}°`, statusPill(analysis.horizontalAngle.status));
+    metricRow(dt, 'Vertical angle', `${analysis.verticalAngle.value}°`, statusPill(analysis.verticalAngle.status));
+    metricRow(dt, 'Viewing distance', `${analysis.viewingDistance.value} m`, statusPill(analysis.viewingDistance.status));
+    metricRow(dt, 'Visibility', analysis.visibility.value.replace('_', ' '), statusPill(analysis.visibility.status));
+    metricRow(dt, 'Sightline', analysis.sightline.value, statusPill(analysis.sightline.status));
+    const overall = document.createElement('div');
+    overall.className = 'badge-note';
+    overall.innerHTML = `Overall: ${statusPill(analysis.overall).outerHTML}<br><br><b>Methodology:</b> ${analysis.viewingDistance.method}`;
+    dt.appendChild(overall);
+    if (analysis.overall !== 'pass') {
+      const go = document.createElement('button');
+      go.className = 'btn';
+      go.textContent = 'Analyze Display';
+      go.onclick = () => {
+        const d = state.equipment.find((e) => catalog.get(e.productId)?.category === 'display');
+        if (d) state.analyzeEquipment(d.instanceId);
+      };
+      dt.appendChild(go);
+    }
+    if (analysis.sightline.status === 'fail') {
+      const blocked = document.createElement('div');
+      blocked.className = 'badge-note';
+      blocked.style.color = 'var(--danger)';
+      blocked.textContent = analysis.sightline.method;
+      dt.appendChild(blocked);
+    }
   }
 
   const viewerBtn = document.createElement('button');
@@ -162,12 +365,11 @@ function renderSeatInspector(body: HTMLElement, state: AppState, seatId: string)
   viewerBtn.onclick = () => state.enterViewerMode(seat.id);
   body.appendChild(viewerBtn);
 
-  const mics = usableMicPlacements(resolveProjectMicrophones(state.equipment, catalog));
-  if (mics.length) {
-    const micR = evaluateSeatMicCoverage({ seatId: seat.id, x: seat.x, z: seat.z }, mics);
+  if (insp.mic) {
+    const micR = insp.mic;
     metricRow(
       body,
-      'Mic pickup',
+      'Mic pickup (geometric)',
       micR.covered
         ? `inside · ${micR.nearestDistanceM ?? '—'} m${micR.angularDeltaDeg != null ? ` · ${micR.angularDeltaDeg}°` : ''}`
         : `outside · ${micR.nearestDistanceM ?? '—'} m`,
@@ -177,25 +379,50 @@ function renderSeatInspector(body: HTMLElement, state: AppState, seatId: string)
     micNote.className = 'badge-note';
     micNote.textContent = micR.criterion;
     body.appendChild(micNote);
+    if (micR.status !== 'pass') {
+      const go = document.createElement('button');
+      go.className = 'btn';
+      go.textContent = 'Analyze Pickup';
+      go.onclick = () => {
+        const m = state.equipment.find((e) => catalog.get(e.productId)?.category === 'microphone');
+        if (m) state.analyzeEquipment(m.instanceId);
+      };
+      body.appendChild(go);
+    }
   }
 
-  const audio = analyzeSeatAudio(seat, state.equipment, catalog);
-  if (state.equipment.some((e) => catalog.get(e.productId)?.category === 'speaker')) {
+  if (insp.speaker) {
+    const audio = insp.speaker;
+    metricRow(
+      body,
+      'Speaker coverage (geometric)',
+      audio.inDispersion ? 'inside dispersion' : 'outside dispersion',
+      statusPill(audio.inDispersion ? (audio.status === 'fail' ? 'warning' : audio.status) : 'fail')
+    );
     metricRow(
       body,
       'Estimated SPL',
       audio.splAtSeat != null ? `${audio.splAtSeat} dB @ ${audio.distanceM ?? '—'} m` : 'outside dispersion / DATA INCOMPLETE',
       statusPill(audio.status)
     );
-    metricRow(body, 'Required SPL band', `${SPL_TARGET_MIN}–${SPL_TARGET_MAX} dB (engineering estimate)`);
     const audioNote = document.createElement('div');
     audioNote.className = 'badge-note';
-    audioNote.textContent = 'ENGINEERING ESTIMATE — free-field + catalog dispersion. Not room-acoustic simulation.';
+    audioNote.textContent = 'GEOMETRIC / free-field estimate — not room-acoustic simulation.';
     body.appendChild(audioNote);
+    if (!audio.inDispersion || audio.status === 'fail') {
+      const go = document.createElement('button');
+      go.className = 'btn';
+      go.textContent = 'Analyze Coverage';
+      go.onclick = () => {
+        const s = state.equipment.find((e) => catalog.get(e.productId)?.category === 'speaker');
+        if (s) state.analyzeEquipment(s.instanceId);
+      };
+      body.appendChild(go);
+    }
   }
 
-  if (state.equipment.some((e) => catalog.get(e.productId)?.category === 'camera')) {
-    const cam = analyzeSeatCamera(seat, state.equipment, catalog, state.room, state.tables);
+  if (insp.camera) {
+    const cam = insp.camera;
     const camIds = cam.visible ? cam.coveringCameraIds : cam.inFov ? cam.blockingCameraIds : [];
     metricRow(body, 'Camera FOV', cam.inFov ? 'PASS' : 'FAIL');
     metricRow(body, 'Camera sightline', cam.sightline.toUpperCase());
@@ -209,6 +436,16 @@ function renderSeatInspector(body: HTMLElement, state: AppState, seatId: string)
     camNote.className = 'badge-note';
     camNote.textContent = 'GEOMETRIC FRUSTUM ESTIMATE — catalog HFOV + SightlineEngine. Not image quality or NVR simulation.';
     body.appendChild(camNote);
+    if (cam.status !== 'pass') {
+      const go = document.createElement('button');
+      go.className = 'btn';
+      go.textContent = 'Analyze FOV';
+      go.onclick = () => {
+        const c = state.equipment.find((e) => catalog.get(e.productId)?.category === 'camera');
+        if (c) state.analyzeEquipment(c.instanceId);
+      };
+      body.appendChild(go);
+    }
   }
 }
 
@@ -234,6 +471,21 @@ function renderEquipmentInspector(body: HTMLElement, state: AppState, instanceId
   nameIn.onchange = () => state.updateEquipment(instanceId, { name: nameIn.value, placementMode: inst.placementMode });
   nameField.append(nameLbl, nameIn);
   body.appendChild(nameField);
+
+  if (['display', 'camera', 'speaker', 'microphone'].includes(product.category)) {
+    const analyze = document.createElement('button');
+    analyze.className = 'btn primary';
+    analyze.textContent =
+      product.category === 'display'
+        ? 'Analyze Display'
+        : product.category === 'camera'
+          ? 'Analyze FOV'
+          : product.category === 'speaker'
+            ? 'Analyze Coverage'
+            : 'Analyze Pickup';
+    analyze.onclick = () => state.analyzeEquipment(instanceId);
+    body.appendChild(analyze);
+  }
 
   const dataStatus = document.createElement('div');
   dataStatus.className = 'badge-note';
@@ -263,6 +515,17 @@ function renderEquipmentInspector(body: HTMLElement, state: AppState, instanceId
     dataStatus.textContent = `DATA ${product.provenance.replace('_', ' ').toUpperCase()} — ${product.source ?? 'catalog record'}`;
   }
   body.appendChild(dataStatus);
+  if (product.category === 'display' && state.room) {
+    const wall = getPresentationWall(state.room);
+    why(
+      body,
+      'Why is the display here?',
+      `The ${wall} wall is the presentation span. Suggested placement stays off door and window exclusion zones.`
+    );
+  }
+  if (incomplete) {
+    why(body, 'Why is this warning shown?', dataStatus.textContent ?? 'Required catalog engineering data is missing.');
+  }
   if (incomplete) appendCatalogLink(body, state);
 
   if (product.display) {
@@ -326,6 +589,32 @@ function renderEquipmentInspector(body: HTMLElement, state: AppState, instanceId
   numField(body, 'Rotation Y (°)', (inst.rotationY * 180) / Math.PI, 5, (v) =>
     state.updateEquipment(instanceId, { rotationY: (v * Math.PI) / 180 })
   );
+
+  if (state.racks.length) {
+    const rackSel = document.createElement('select');
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = 'Not in rack';
+    rackSel.appendChild(none);
+    state.racks.forEach((r) => {
+      const o = document.createElement('option');
+      o.value = r.id;
+      o.textContent = `${r.id} (${r.ruTotal} RU)`;
+      if (inst.rackId === r.id) o.selected = true;
+      rackSel.appendChild(o);
+    });
+    rackSel.onchange = () => state.assignEquipmentToRack(instanceId, rackSel.value || null);
+    const wrap = document.createElement('div');
+    wrap.className = 'field';
+    const lab = document.createElement('label');
+    lab.textContent = 'Assign to AV rack';
+    wrap.append(lab, rackSel);
+    body.appendChild(wrap);
+    if (inst.rackId) {
+      metricRow(body, 'Rack position', inst.rackPositionRU != null ? `U${inst.rackPositionRU}` : '—');
+      metricRow(body, 'Rack units', inst.rackUnits != null ? `${inst.rackUnits} RU` : product.rackUnits != null ? `${product.rackUnits} RU (catalog)` : 'DATA INCOMPLETE');
+    }
+  }
 
   const origin = inst.origin === 'auto' && inst.placementMode !== 'manual' ? 'AUTO' : inst.placementMode === 'manual' || inst.origin === 'manual' ? 'MANUAL OVERRIDE' : inst.placementMode === 'smart' ? 'SMART' : '';
   if (origin) {
@@ -398,6 +687,35 @@ function renderEquipmentInspector(body: HTMLElement, state: AppState, instanceId
             ? '✓ Connected'
             : 'Available'
       );
+      if (used) return;
+      const others = state.equipment.flatMap((e) =>
+        e.instanceId === inst.instanceId ? [] : resolveInstancePorts(e.instanceId, e.productId, catalog)
+      );
+      const partners =
+        p.direction === 'input' ? compatibleSources(p, others, state.connections) : compatibleDestinations(p, others, state.connections);
+      if (!partners.length) return;
+      const wrap = document.createElement('div');
+      wrap.className = 'field';
+      const sel = document.createElement('select');
+      const ph = document.createElement('option');
+      ph.value = '';
+      ph.textContent = p.direction === 'input' ? `Connect source to ${p.label}…` : `Connect ${p.label} to…`;
+      sel.appendChild(ph);
+      partners.forEach((d) => {
+        const eq = state.equipment.find((e) => e.instanceId === d.instanceId);
+        const o = document.createElement('option');
+        o.value = `${d.instanceId}::${d.id}`;
+        o.textContent = `${eq?.name ?? d.instanceId} · ${d.label}`;
+        sel.appendChild(o);
+      });
+      sel.onchange = () => {
+        const [otherId, otherPort] = sel.value.split('::');
+        if (!otherId || !otherPort) return;
+        if (p.direction === 'input') state.addConnection(otherId, otherPort, p.instanceId, p.id);
+        else state.addConnection(p.instanceId, p.id, otherId, otherPort);
+      };
+      wrap.appendChild(sel);
+      body.appendChild(wrap);
     });
   }
   const linked = state.connections.filter((c) => c.fromInstanceId === inst.instanceId || c.toInstanceId === inst.instanceId);
@@ -475,23 +793,39 @@ function renderConnectionInspector(body: HTMLElement, state: AppState, id: strin
   if (!c) return;
   const src = state.equipment.find((e) => e.instanceId === c.fromInstanceId);
   const dst = state.equipment.find((e) => e.instanceId === c.toInstanceId);
-  metricRow(body, 'Source', src ? `${src.name}` : c.fromInstanceId);
-  metricRow(body, 'Destination', dst ? `${dst.name}` : c.toInstanceId);
+  const srcPort = src ? resolveInstancePorts(src.instanceId, src.productId, catalog).find((p) => p.id === c.fromPortId) : undefined;
+  const dstPort = dst ? resolveInstancePorts(dst.instanceId, dst.productId, catalog).find((p) => p.id === c.toPortId) : undefined;
+  const route = cachedCableRoute(c, cableRouteContext(state, catalog));
+  metricRow(body, 'Source', src ? `${src.name} · ${srcPort?.label ?? c.fromPortId}` : c.fromInstanceId);
+  metricRow(body, 'Destination', dst ? `${dst.name} · ${dstPort?.label ?? c.toPortId}` : c.toInstanceId);
   metricRow(body, 'Signal', c.signalType);
+  metricRow(body, 'Cable', cableTypeOf(c));
   metricRow(body, 'Transport', c.transport);
-  metricRow(body, 'Physical medium', c.physicalMedium);
-  metricRow(body, 'Status', '✓ Connected');
+  metricRow(body, 'Route length', `${route.totalLength.toFixed(2)} m (${route.segments.length} segments)`);
+  metricRow(body, 'Path type', route.pathType);
+  const limit = state.cableLengthLimitsM[cableTypeOf(c)];
+  metricRow(body, 'Length check', limit == null ? 'No configured limit' : route.totalLength > limit ? `Exceeds ${limit} m` : `Within ${limit} m`);
+  metricRow(
+    body,
+    'Status',
+    route.status === 'clear' ? '✓ Valid · route clear' : route.status === 'intersects-obstacle' ? '⚠ Route intersects obstacle' : 'No room geometry'
+  );
+  const srcBtn = document.createElement('button');
+  srcBtn.className = 'btn';
+  srcBtn.textContent = 'Focus Source';
+  srcBtn.onclick = () => state.focusConnectionEndpoint('source');
+  const dstBtn = document.createElement('button');
+  dstBtn.className = 'btn';
+  dstBtn.textContent = 'Focus Destination';
+  dstBtn.onclick = () => state.focusConnectionEndpoint('destination');
+  const show = document.createElement('button');
+  show.className = 'btn primary';
+  show.textContent = 'Show Route';
+  show.onclick = () => state.showConnectionRoute(c.id);
+  body.append(srcBtn, dstBtn, show);
   const disc = document.createElement('button');
   disc.className = 'btn';
   disc.textContent = 'Disconnect';
   disc.onclick = () => state.removeConnection(c.id);
   body.appendChild(disc);
-  const room = document.createElement('button');
-  room.className = 'btn';
-  room.textContent = 'View source in Room';
-  room.onclick = () => {
-    state.select('equipment', c.fromInstanceId);
-    state.viewInRoom();
-  };
-  body.appendChild(room);
 }

@@ -36,8 +36,32 @@ export function renderContextToolbar(container: HTMLElement, state: AppState): v
       mkBtn('View in Room', () => state.viewInRoom())
     );
     if (state.selectedEquipmentIds().length === 2) {
-      bar.append(mkBtn('Connect compatible', () => state.connectCompatiblePair(state.selectedEquipmentIds()[0], state.selectedEquipmentIds()[1]), 'primary'));
+      bar.append(
+        mkBtn('Connect compatible', () => state.connectCompatiblePair(state.selectedEquipmentIds()[0], state.selectedEquipmentIds()[1]), 'primary')
+      );
     }
+    container.appendChild(bar);
+    return;
+  }
+
+  if (state.selectedConnectionId) {
+    bar.append(
+      mkBtn('Inspect', () => state.setWorkspaceMode('system')),
+      mkBtn('Show Route', () => state.showConnectionRoute(state.selectedConnectionId!), 'primary'),
+      mkBtn('Delete', () => state.deleteSelected())
+    );
+    container.appendChild(bar);
+    return;
+  }
+
+  if (state.selectedEquipmentIds().length >= 2) {
+    bar.append(
+      mkBtn('Align', () => state.applyAlign('centerX')),
+      mkBtn('Distribute', () => state.applyAlign('distributeX')),
+      mkBtn('Group', () => state.groupSelected()),
+      mkBtn('Duplicate', () => state.duplicateSelectedEquipment()),
+      mkBtn('Delete', () => state.deleteSelected())
+    );
     container.appendChild(bar);
     return;
   }
@@ -50,15 +74,17 @@ export function renderContextToolbar(container: HTMLElement, state: AppState): v
       mkBtn('Plan', () => state.setViewMode('plan'))
     );
   } else if (state.selection.kind === 'table' && state.selection.id) {
-    bar.append(mkBtn('Move', () => state.setTransformMode('translate'), 'active'), mkBtn('Edit Seating', () => state.setDesignTool('seating')));
-  } else {
     bar.append(
-      mkBtn('AUTO DESIGN', () => state.requestAutoDesign(), 'primary'),
-      mkBtn('Fit', () => state.requestFocus()),
-      mkBtn('3D', () => state.setViewMode('3d'), state.viewMode === '3d' ? 'active' : undefined),
-      mkBtn('Plan', () => state.setViewMode('plan'), state.viewMode === 'plan' ? 'active' : undefined),
-      mkBtn('Elev', () => state.setViewMode('elevation'), state.viewMode === 'elevation' ? 'active' : undefined)
+      mkBtn('Move', () => state.setViewportTool('move'), state.viewportTool === 'move' ? 'active' : undefined),
+      mkBtn('Rotate', () => state.rotateSelectedTable90(), state.viewportTool === 'rotate' ? 'active' : undefined),
+      mkBtn('Resize', () => state.setDesignTool('seating')),
+      mkBtn('Align', () => state.alignSelectedTableCenter()),
+      mkBtn('Duplicate', () => state.duplicateSelectedTable()),
+      mkBtn('Delete', () => state.deleteSelected()),
+      mkBtn('Validate', () => state.setWorkspaceMode('validate'))
     );
+  } else if (state.selection.kind === 'room') {
+    bar.append(mkBtn('Fit', () => state.requestFocus()), mkBtn('Regenerate Seating', () => state.regenerateSeating()));
   }
 
   container.appendChild(bar);
@@ -76,35 +102,49 @@ function renderEquipmentToolbar(bar: HTMLElement, state: AppState, instanceId: s
 
   if (state.viewMode === 'plan' && state.selectedEquipmentIds().length >= 2) {
     bar.append(mkSep());
-    ([['left', 'Align −X'], ['centerX', 'Center X'], ['right', 'Align +X'], ['front', 'Align −Z'], ['distributeX', 'Distribute X']] as Array<[AlignCommand, string]>).forEach(
-      ([cmd, label]) => bar.appendChild(mkBtn(label, () => state.applyAlign(cmd)))
-    );
+    (
+      [
+        ['left', 'Align −X'],
+        ['centerX', 'Center X'],
+        ['right', 'Align +X'],
+        ['front', 'Align −Z'],
+        ['distributeX', 'Distribute X']
+      ] as Array<[AlignCommand, string]>
+    ).forEach(([cmd, label]) => bar.appendChild(mkBtn(label, () => state.applyAlign(cmd))));
   }
 
   bar.append(mkSep());
   if (cat === 'display') {
-    bar.appendChild(mkBtn('Analyze', () => {
-      state.enableDisplayAnalysis();
-      state.setWorkspaceMode('simulate');
-    }));
+    bar.appendChild(
+      mkBtn('Analyze', () => {
+        state.enableDisplayAnalysis();
+        state.setWorkspaceMode('simulate');
+      })
+    );
   }
   if (cat === 'microphone') {
-    bar.appendChild(mkBtn('Analyze Pickup', () => {
-      state.enableMicAnalysis();
-      state.setWorkspaceMode('simulate');
-    }));
+    bar.appendChild(
+      mkBtn('Analyze Pickup', () => {
+        state.enableMicAnalysis();
+        state.setWorkspaceMode('simulate');
+      })
+    );
   }
   if (cat === 'speaker') {
-    bar.appendChild(mkBtn('Analyze Coverage', () => {
-      state.enableAudioAnalysis();
-      state.setWorkspaceMode('simulate');
-    }));
+    bar.appendChild(
+      mkBtn('Analyze Coverage', () => {
+        state.enableAudioAnalysis();
+        state.setWorkspaceMode('simulate');
+      })
+    );
   }
   if (cat === 'camera') {
-    bar.appendChild(mkBtn('Analyze FOV', () => {
-      state.enableCameraAnalysis();
-      state.setWorkspaceMode('simulate');
-    }));
+    bar.appendChild(
+      mkBtn('Analyze Pickup/View', () => {
+        state.enableCameraAnalysis();
+        state.setWorkspaceMode('simulate');
+      })
+    );
   }
 
   bar.append(

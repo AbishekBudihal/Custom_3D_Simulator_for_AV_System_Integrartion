@@ -12,7 +12,7 @@ import type { RoomModel, Opening } from './RoomModel';
 
 const MATERIALS = {
   wall: new THREE.MeshStandardMaterial({ color: 0xe8e6e1, roughness: 0.92, metalness: 0.02, side: THREE.DoubleSide }),
-  floor: new THREE.MeshStandardMaterial({ color: 0x9a8f7e, roughness: 0.75, metalness: 0.05 }),
+  floor: new THREE.MeshStandardMaterial({ color: 0xc4bbb0, roughness: 0.78, metalness: 0.04 }),
   ceiling: new THREE.MeshStandardMaterial({ color: 0xf5f4f2, roughness: 0.95, metalness: 0.0, side: THREE.DoubleSide }),
   glass: new THREE.MeshPhysicalMaterial({ color: 0xbfe3f0, transparent: true, opacity: 0.25, roughness: 0.05, transmission: 0.6 }),
   door: new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.6 }),

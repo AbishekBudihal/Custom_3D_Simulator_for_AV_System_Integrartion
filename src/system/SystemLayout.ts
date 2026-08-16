@@ -25,6 +25,19 @@ const COLUMNS: string[][] = [
   ['display', 'speaker', 'control']
 ];
 
+export const DISCIPLINE_GROUPS: Array<{ id: string; label: string; categories: string[] }> = [
+  { id: 'video', label: 'Video', categories: ['display', 'camera', 'source', 'switcher', 'extender'] },
+  { id: 'audio', label: 'Audio', categories: ['microphone', 'dsp', 'amplifier', 'speaker'] },
+  { id: 'network', label: 'Network', categories: ['network'] },
+  { id: 'control', label: 'Control', categories: ['control'] },
+  { id: 'infrastructure', label: 'Infrastructure', categories: ['rack', 'infrastructure'] }
+];
+
+export function disciplineForCategory(category: string): string {
+  const g = DISCIPLINE_GROUPS.find((d) => d.categories.includes(category));
+  return g?.label ?? 'Other';
+}
+
 export function computeAutoLayout(
   equipment: Array<{ instanceId: string; productId: string }>,
   catalog: EquipmentCatalog

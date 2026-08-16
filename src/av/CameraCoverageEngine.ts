@@ -163,6 +163,7 @@ export interface CameraCoverageCell {
   overall: CheckStatus;
   inFov: boolean;
   visible: boolean;
+  score?: number;
 }
 
 export interface CameraCoverageGrid {
@@ -196,7 +197,8 @@ export function sampleCameraCoverage(
       z: point.z,
       overall: r.overall,
       inFov: r.inFov,
-      visible: r.visible
+      visible: r.visible,
+      score: r.visible ? 1 : r.inFov ? 0.45 : 0
     };
   });
   return {

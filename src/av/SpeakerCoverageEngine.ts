@@ -190,6 +190,7 @@ export interface SpeakerCoverageCell {
   z: number;
   overall: CheckStatus;
   splAtSeat: number | null;
+  score?: number;
 }
 
 export interface SpeakerCoverageGrid {
@@ -220,7 +221,11 @@ export function sampleSpeakerCoverage(
       x: point.x,
       z: point.z,
       overall: r.status,
-      splAtSeat: r.splAtSeat
+      splAtSeat: r.splAtSeat,
+      score:
+        r.splAtSeat == null
+          ? 0
+          : Math.min(1, Math.max(0, (r.splAtSeat - 55) / 40))
     };
   });
   return {

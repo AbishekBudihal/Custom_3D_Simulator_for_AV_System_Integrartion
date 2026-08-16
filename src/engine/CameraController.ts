@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import type { CameraViewPreset } from '../app/AppState';
 
 export class CameraController {
   readonly camera: THREE.PerspectiveCamera;
@@ -13,6 +14,27 @@ export class CameraController {
     this.controls.dampingFactor = 0.08;
     this.controls.maxPolarAngle = Math.PI * 0.49;
     this.controls.target.set(0, 1, 0);
+    this.controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+    this.controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
+    this.controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+  }
+
+  applyViewPreset(view: CameraViewPreset, width: number, depth: number, height: number): void {
+    const diag = Math.hypot(width, depth);
+    this.controls.maxPolarAngle = view === 'top' ? Math.PI : Math.PI * 0.49;
+    this.controls.target.set(0, height * 0.35, 0);
+    if (view === 'top') {
+      this.camera.position.set(0, Math.max(diag * 1.15, height * 2.2), 0.01);
+    } else if (view === 'front') {
+      this.camera.position.set(0, height * 0.9, Math.max(depth * 1.4, 6));
+    } else if (view === 'left') {
+      this.camera.position.set(-Math.max(width * 1.4, 6), height * 0.9, 0);
+    } else if (view === 'right') {
+      this.camera.position.set(Math.max(width * 1.4, 6), height * 0.9, 0);
+    } else {
+      this.camera.position.set(diag * 0.55, Math.max(height * 1.6, 3), diag * 0.55);
+    }
+    this.controls.update();
   }
 
   setAspect(aspect: number): void {

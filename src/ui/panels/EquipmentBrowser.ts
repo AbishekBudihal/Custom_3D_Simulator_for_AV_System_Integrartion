@@ -27,6 +27,12 @@ import {
 } from '../../av/PlacementSuggestionEngine';
 import { snapWallMounted } from '../../interaction/SnapEngine';
 import { getPresentationWall } from '../../room/RoomGeometry';
+import {
+  cameraEngineeringReady,
+  displayEngineeringReady,
+  micEngineeringReady,
+  speakerEngineeringReady
+} from '../../autodesign/CatalogCandidates';
 
 const catalog = loadDefaultCatalog();
 
@@ -246,6 +252,11 @@ function renderProductCard(p: EquipmentProduct, state: AppState, wrap: HTMLEleme
   const flags = document.createElement('div');
   flags.className = 'equip-card-flags';
   flags.innerHTML = `<span>✓ Specifications</span>`;
+  const incompleteHint = catalogIncompleteReason(p);
+  if (incompleteHint) {
+    flags.innerHTML = `<span class="data-incomplete">DATA INCOMPLETE</span>`;
+    flags.title = incompleteHint;
+  }
   card.appendChild(flags);
 
   const viewBtn = document.createElement('button');
@@ -281,6 +292,14 @@ function categoryIcon(p: EquipmentProduct): string {
     default:
       return '📦';
   }
+}
+
+function catalogIncompleteReason(p: EquipmentProduct): string | null {
+  if (p.category === 'display') return displayEngineeringReady(p);
+  if (p.category === 'microphone') return micEngineeringReady(p);
+  if (p.category === 'speaker') return speakerEngineeringReady(p);
+  if (p.category === 'camera') return cameraEngineeringReady(p);
+  return null;
 }
 
 function specLine(p: EquipmentProduct): string {

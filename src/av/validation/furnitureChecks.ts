@@ -15,7 +15,6 @@ import {
   WALKWAY_CLEARANCE_M,
   WALL_CLEARANCE_M
 } from '../../room/FurnitureGeometry';
-import { defaultSeatingConfig, generateSeating } from '../../room/SeatingGenerator';
 
 function finding(
   partial: Omit<ValidationFinding, 'affectedObjects' | 'recommendedActions' | 'potentialVariables'> & {
@@ -271,9 +270,10 @@ export const checkFurnSeatingFits: ValidationCheck = {
     if (!ctx.room) return [];
     const n = ctx.seats.length;
     if (n === 0) return [];
-    const layout = ctx.tables.length <= 1 ? 'boardroom' : ctx.tables.length === 3 ? 'u_shape' : ctx.tables.length >= 4 ? 'hollow_square' : 'classroom';
-    const gen = generateSeating(ctx.room, defaultSeatingConfig(n, layout));
-    if (gen.valid) {
+    const tablesOk = ctx.tables.every((t) => aabbInsideRoom(ctx.room!, tableAabb(t), 0.02));
+    const chairsOk = ctx.seats.every((s) => aabbInsideRoom(ctx.room!, chairAabb(s), 0.02));
+    const overlap = ctx.tables.some((a, i) => ctx.tables.some((b, j) => j > i && aabbsOverlap(tableAabb(a), tableAabb(b), 0.02)));
+    if (tablesOk && chairsOk && !overlap) {
       return [
         finding({
           id: 'FURN-006',
@@ -281,9 +281,9 @@ export const checkFurnSeatingFits: ValidationCheck = {
           severity: 'pass',
           category: 'furniture',
           title: 'Seating fits',
-          message: `${n} seats fit the room with required circulation for a ${layout} layout.`,
-          explanation: 'Re-ran SeatingGenerator for the current seat count and inferred layout.',
-          source: 'SeatingGenerator.valid for current seat count.'
+          message: `${n} seats and ${ctx.tables.length} table(s) stay inside the room without table overlap.`,
+          explanation: 'Validates the current TableSpec[] and Seat[] — does not re-guess a layout from table count.',
+          source: 'Current furniture AABBs vs room.'
         })
       ];
     }
@@ -294,12 +294,12 @@ export const checkFurnSeatingFits: ValidationCheck = {
         severity: 'error',
         category: 'furniture',
         title: 'Requested seating does not fit room',
-        message: gen.warnings[0] ?? `${n} seats cannot be accommodated with the selected room dimensions and required circulation.`,
-        explanation: 'The furniture-first generator reports the layout as not physically usable.',
+        message: overlap ? 'Tables overlap.' : 'Seats or tables extend outside the usable room.',
+        explanation: 'Current furniture must remain inside the room without overlapping tables.',
         affectedObjects: ctx.tables.map((t) => ({ kind: 'table' as const, id: t.id, label: t.id })),
         recommendedActions: ['Reduce seating', 'Change layout', 'Increase room size', 'Manual design'],
         potentialVariables: ['Seat count', 'Layout', 'Room size'],
-        source: 'SeatingGenerator.valid / circulation envelope.'
+        source: 'Current TableSpec/Seat AABBs.'
       })
     ];
   }

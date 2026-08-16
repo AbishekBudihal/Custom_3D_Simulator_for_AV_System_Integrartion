@@ -12,11 +12,13 @@
 import type { RoomModel } from '../room/RoomModel';
 import type { TableSpec } from '../room/SeatingGenerator';
 import type { Obstacle } from './SightlineEngine';
+import type { AVRack } from './AVRack';
+import { rackFootprint } from './AVRack';
 
 /** Matches SeatingRenderer table top (~0.73m) plus a small allowance. */
 export const TABLE_TOP_HEIGHT_M = 0.75;
 
-export function obstaclesFromProject(room: RoomModel | null, tables: TableSpec[]): Obstacle[] {
+export function obstaclesFromProject(room: RoomModel | null, tables: TableSpec[], racks: AVRack[] = []): Obstacle[] {
   const obstacles: Obstacle[] = [];
   tables.forEach((t) => {
     obstacles.push({
@@ -25,6 +27,16 @@ export function obstaclesFromProject(room: RoomModel | null, tables: TableSpec[]
       z: t.centerZ,
       topHeightM: t.height ?? TABLE_TOP_HEIGHT_M,
       radius: Math.max(0.15, Math.hypot(t.sizeX, t.sizeZ) / 2)
+    });
+  });
+  racks.forEach((r) => {
+    const foot = rackFootprint(r);
+    obstacles.push({
+      id: `rack:${r.id}`,
+      x: r.x,
+      z: r.z,
+      topHeightM: r.kind === 'wall' ? r.y + r.height / 2 : r.height,
+      radius: Math.max(0.15, Math.hypot(foot.maxX - foot.minX, foot.maxZ - foot.minZ) / 2)
     });
   });
   if (room) {

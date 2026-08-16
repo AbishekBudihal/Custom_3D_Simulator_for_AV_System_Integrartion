@@ -29,6 +29,7 @@ export interface DesignRequirements {
     /** World X extent. UI label: Width. */
     width: number | null;
     height: number | null;
+    divisible?: boolean;
   };
   seating: {
     count: number | null;

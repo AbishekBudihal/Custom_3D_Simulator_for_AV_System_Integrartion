@@ -67,11 +67,16 @@ describe('Table furniture — boardroom produces one real table, not two wall-hu
 });
 
 describe('Table furniture — per-layout table counts match the furniture model, not seat count', () => {
-  it('classroom produces one desk per row', () => {
+  it('classroom produces independent desks (one table per 1–2 seats), not a wall-width row slab', () => {
     const room = bareRoom({ width: 12, depth: 9 });
     const { seats, tables } = generateSeating(room, defaultSeatingConfig(20, 'classroom'));
-    const rowCount = new Set(seats.map((s) => s.row)).size;
-    expect(tables.length).toBe(rowCount);
+    expect(tables.length).toBeGreaterThan(1);
+    expect(tables.length).toBe(new Set(seats.map((s) => s.tableId)).size);
+    tables.forEach((t) => expect(t.sizeX).toBeLessThanOrEqual(1.6));
+    seats.forEach((s) => {
+      expect(s.tableId).toBeTruthy();
+      expect(tables.some((t) => t.id === s.tableId)).toBe(true);
+    });
   });
 
   it('theater has no tables at all', () => {

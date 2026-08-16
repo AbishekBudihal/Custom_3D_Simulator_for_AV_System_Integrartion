@@ -17,7 +17,11 @@ export interface RequirementsValidation {
 
 const LAYOUTS: SeatingLayout[] = [
   'boardroom',
+  'conference',
   'classroom',
+  'training',
+  'flexible',
+  'custom',
   'theater',
   'u_shape',
   'hollow_square',

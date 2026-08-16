@@ -17,6 +17,8 @@ import { designSignature, summarizeFindings, type ValidationReport } from './Val
 import { validationRegistry } from './ValidationRegistry';
 import { BUILTIN_CHECKS } from './builtinChecks';
 import { SYSTEM_CHECKS } from './systemChecks';
+import { RACK_CHECKS } from './rackChecks';
+import { CABLE_CHECKS } from './cableChecks';
 import type { ProjectValidationContext } from './ValidationContext';
 import type { ValidationFinding } from './ValidationTypes';
 
@@ -26,6 +28,8 @@ export function ensureBuiltinChecksRegistered(): void {
   if (registered) return;
   BUILTIN_CHECKS.forEach((c) => validationRegistry.register(c));
   SYSTEM_CHECKS.forEach((c) => validationRegistry.register(c));
+  RACK_CHECKS.forEach((c) => validationRegistry.register(c));
+  CABLE_CHECKS.forEach((c) => validationRegistry.register(c));
   registered = true;
 }
 
@@ -37,6 +41,8 @@ export function buildValidationContext(input: {
   catalog: EquipmentCatalog;
   connections?: SystemConnection[];
   routes?: SystemRoute[];
+  racks?: import('../../av/AVRack').AVRack[];
+  cableLengthLimitsM?: Partial<Record<import('../../system/SystemTypes').PhysicalMedium, number>>;
 }): ProjectValidationContext {
   const display = resolveActiveDisplay(input.equipment, input.catalog);
   const obstacles = projectObstacles(input.room, input.tables);
@@ -49,10 +55,12 @@ export function buildValidationContext(input: {
     equipment: input.equipment,
     connections: input.connections ?? [],
     routes: input.routes ?? [],
+    racks: input.racks ?? [],
     catalog: input.catalog,
     display,
     seatAnalyses,
-    obstacles
+    obstacles,
+    cableLengthLimitsM: input.cableLengthLimitsM ?? {}
   };
 }
 
@@ -64,6 +72,8 @@ export function runDesignValidation(input: {
   catalog: EquipmentCatalog;
   connections?: SystemConnection[];
   routes?: SystemRoute[];
+  racks?: import('../../av/AVRack').AVRack[];
+  cableLengthLimitsM?: Partial<Record<import('../../system/SystemTypes').PhysicalMedium, number>>;
 }): ValidationReport {
   ensureBuiltinChecksRegistered();
   const signature = designSignature(input);

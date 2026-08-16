@@ -10,10 +10,20 @@ import { getActiveDisplay, computeSeatStatuses, projectObstacles } from '../../a
 import { cachedCoverage } from '../../av/coverageCache';
 import { cachedMicCoverage } from '../../av/micCoverageCache';
 import { STATUS_RGB } from '../../av/HeatmapEngine';
+import type { HeatmapImage } from '../../av/HeatmapEngine';
+import { contourPolylines, fieldFromCells } from '../../av/simulation/SpatialField';
 import { loadDefaultCatalog } from '../../catalog/loadCatalog';
 import type { CheckStatus } from '../../av/ViewingDistanceEngine';
 import { seatForward } from '../../room/RoomGeometry';
 import { snapEquipment, snapSeatPosition, snapTablePosition } from '../../interaction/SnapEngine';
+import { rackServiceAabb } from '../../av/AVRack';
+import {
+  alignmentGuides,
+  boxCadTargets,
+  nearestCadSnap,
+  roomCadTargets,
+  type AlignmentGuide
+} from '../../interaction/CadSnap';
 import { computeSeatMicStatuses, resolveProjectMicrophones, usableMicPlacements } from '../../av/MicAnalysis';
 import { cachedSpeakerCoverage } from '../../av/speakerCoverageCache';
 import {
@@ -28,6 +38,8 @@ import {
   summarizeCameraCoverage,
   usableCameraPlacements
 } from '../../av/CameraAnalysis';
+import { cachedCableRoute } from '../../system/CableRouter';
+import { cableRouteContext } from '../../system/cableContext';
 
 const catalog = loadDefaultCatalog();
 const PX_PER_M = 46;
@@ -42,26 +54,67 @@ function svgEl<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<strin
 
 function drawHeatmapGrid(
   svg: SVGSVGElement,
-  grid: { cols: number; rows: number; cells: Array<{ x: number; z: number; overall: CheckStatus }> },
+  grid: {
+    cols: number;
+    rows: number;
+    cells: Array<{ col: number; row: number; x: number; z: number; overall: CheckStatus; score?: number; masked?: boolean }>;
+  },
   roomWpx: number,
   roomDpx: number,
-  toPx: (x: number, z: number) => [number, number]
+  image: HeatmapImage | null,
+  room: RoomModel,
+  state: AppState,
+  toPx: (x: number, z: number) => [number, number],
+  showContours: boolean
 ): void {
-  const cellW = roomWpx / grid.cols;
-  const cellD = roomDpx / grid.rows;
-  grid.cells.forEach((cell) => {
-    const [px, pz] = toPx(cell.x, cell.z);
-    const [r, g, b] = STATUS_RGB[cell.overall];
-    svg.appendChild(
-      svgEl('rect', {
-        x: px - cellW / 2,
-        y: pz - cellD / 2,
-        width: cellW,
-        height: cellD,
-        fill: `rgba(${r},${g},${b},0.32)`,
-        stroke: 'none'
-      })
-    );
+  if (image?.dataUrl) {
+    const img = svgEl('image', {
+      href: image.dataUrl,
+      x: 0,
+      y: 0,
+      width: roomWpx,
+      height: roomDpx,
+      opacity: 0.55,
+      preserveAspectRatio: 'none'
+    });
+    svg.appendChild(img);
+  } else {
+    const cellW = roomWpx / grid.cols;
+    const cellD = roomDpx / grid.rows;
+    grid.cells.forEach((cell) => {
+      if (cell.masked) return;
+      const [px, pz] = toPx(cell.x, cell.z);
+      const [r, g, b] = STATUS_RGB[cell.overall];
+      svg.appendChild(
+        svgEl('rect', {
+          x: px - cellW / 2,
+          y: pz - cellD / 2,
+          width: cellW,
+          height: cellD,
+          fill: `rgba(${r},${g},${b},0.32)`,
+          stroke: 'none'
+        })
+      );
+    });
+  }
+  if (!showContours) return;
+  const field = fieldFromCells(room, grid.cols, grid.rows, grid.cells, state.tables, state.racks);
+  contourPolylines(field, [0.5, 0.85]).forEach((c) => {
+    for (let i = 0; i + 1 < c.points.length; i += 2) {
+      const [x1, y1] = toPx(c.points[i].x, c.points[i].z);
+      const [x2, y2] = toPx(c.points[i + 1].x, c.points[i + 1].z);
+      svg.appendChild(
+        svgEl('line', {
+          x1,
+          y1,
+          x2,
+          y2,
+          stroke: c.iso >= 0.75 ? '#2fae5a' : '#c47b12',
+          'stroke-width': 1.2,
+          opacity: 0.85
+        })
+      );
+    }
   });
 }
 
@@ -84,7 +137,7 @@ export function renderPlanView(container: HTMLElement, state: AppState): void {
     height: '100%',
     viewBox: `${-padPx} ${-padPx} ${w + padPx * 2} ${d + padPx * 2}`
   });
-  svg.style.background = '#eceae6';
+  svg.style.background = '#f7f8fa';
 
   const toPx = (x: number, z: number): [number, number] => [x * PX_PER_M + w / 2, z * PX_PER_M + d / 2];
   const toWorld = (px: number, pz: number): { x: number; z: number } => ({
@@ -92,10 +145,11 @@ export function renderPlanView(container: HTMLElement, state: AppState): void {
     z: (pz - d / 2) / PX_PER_M
   });
 
-  svg.appendChild(svgEl('rect', { x: 0, y: 0, width: w, height: d, fill: '#ffffff', stroke: '#2a2b2f', 'stroke-width': 3 }));
+  svg.appendChild(svgEl('rect', { x: 0, y: 0, width: w, height: d, fill: '#ffffff', stroke: '#5c6370', 'stroke-width': 2.5 }));
+  drawPlanGrid(svg, room, w, d, state.gridSpacingM);
 
   const display = getActiveDisplay(state.equipment, catalog);
-  const obstacles = projectObstacles(room, state.tables);
+  const obstacles = projectObstacles(room, state.tables, state.racks);
   const viz = state.displayAnalysis;
   const micViz = state.micAnalysis;
   const audioViz = state.audioAnalysis;
@@ -108,22 +162,33 @@ export function renderPlanView(container: HTMLElement, state: AppState): void {
   const usableCameras = usableCameraPlacements(resolvedCameras);
 
   if (cameraViz.enabled && cameraViz.heatmap) {
-    const { grid } = cachedCameraCoverage(room, usableCameras, obstacles, cameraViz.samplingQuality);
-    drawHeatmapGrid(svg, grid, w, d, toPx);
+    const { grid, image } = cachedCameraCoverage(room, usableCameras, obstacles, cameraViz.samplingQuality);
+    drawHeatmapGrid(svg, grid, w, d, image, room, state, toPx, cameraViz.contours);
   } else if (audioViz.enabled && audioViz.heatmap) {
-    const { grid } = cachedSpeakerCoverage(room, usableSpeakers, audioViz.samplingQuality);
-    drawHeatmapGrid(svg, grid, w, d, toPx);
+    const { grid, image } = cachedSpeakerCoverage(room, usableSpeakers, audioViz.samplingQuality);
+    drawHeatmapGrid(svg, grid, w, d, image, room, state, toPx, audioViz.contours);
   } else if (micViz.enabled && micViz.heatmap) {
-    const { grid } = cachedMicCoverage(room, usableMics, micViz.samplingQuality);
-    drawHeatmapGrid(svg, grid, w, d, toPx);
+    const { grid, image } = cachedMicCoverage(room, usableMics, micViz.samplingQuality);
+    drawHeatmapGrid(svg, grid, w, d, image, room, state, toPx, micViz.contours);
   } else if (viz.enabled && viz.heatmap && display) {
-    const { grid } = cachedCoverage(room, display, obstacles, viz.samplingQuality);
-    drawHeatmapGrid(svg, grid, w, d, toPx);
+    const { grid, image } = cachedCoverage(
+      room,
+      display,
+      obstacles,
+      viz.samplingQuality,
+      viz.heatmapMetric,
+      state.tables,
+      state.racks
+    );
+    drawHeatmapGrid(svg, grid, w, d, image, room, state, toPx, viz.contours);
   }
 
   drawOpenings(svg, room, w, d);
   drawColumns(svg, room, toPx);
-  drawDimensions(svg, room, w, d);
+  drawDimensions(svg, room, w, d, state);
+
+  drawAlignmentGuides(svg, state.alignmentGuides, toPx, w, d);
+  drawMeasureOverlay(svg, state, toPx);
 
   // Tables
   state.tables.forEach((table) => {
@@ -158,10 +223,50 @@ export function renderPlanView(container: HTMLElement, state: AppState): void {
     g.style.cursor = 'grab';
     g.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (state.viewportTool === 'measure') return;
       state.select('table', table.id);
     });
     enablePlanDrag(g, rect as SVGGraphicsElement, state, table.id, 'table', toWorld, room, px, pz);
     svg.appendChild(g);
+  });
+
+  state.racks.forEach((rack) => {
+    const [px, pz] = toPx(rack.x, rack.z);
+    const isSelected = state.selection.kind === 'rack' && state.selection.id === rack.id;
+    const service = rackServiceAabb(rack);
+    const [s0x, s0z] = toPx(service.minX, service.minZ);
+    const [s1x, s1z] = toPx(service.maxX, service.maxZ);
+    const rg = svgEl('g', { class: 'plan-rack', 'data-rack-id': rack.id });
+    rg.appendChild(
+      svgEl('rect', {
+        x: Math.min(s0x, s1x),
+        y: Math.min(s0z, s1z),
+        width: Math.abs(s1x - s0x),
+        height: Math.abs(s1z - s0z),
+        fill: 'none',
+        stroke: '#8a6d3b',
+        'stroke-width': 1,
+        'stroke-dasharray': '5 4'
+      })
+    );
+    const body = svgEl('rect', {
+      x: px - (rack.width * PX_PER_M) / 2,
+      y: pz - (rack.depth * PX_PER_M) / 2,
+      width: rack.width * PX_PER_M,
+      height: rack.depth * PX_PER_M,
+      fill: '#3a3d44',
+      stroke: isSelected ? '#2f8cff' : '#1f2126',
+      'stroke-width': isSelected ? 3 : 1.25
+    });
+    rg.appendChild(body);
+    rg.style.cursor = 'grab';
+    rg.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (state.viewportTool === 'measure') return;
+      state.select('rack', rack.id);
+    });
+    enablePlanDrag(rg, body as SVGGraphicsElement, state, rack.id, 'rack', toWorld, room, px, pz);
+    svg.appendChild(rg);
   });
 
   const displayForSeats = display;
@@ -327,6 +432,35 @@ export function renderPlanView(container: HTMLElement, state: AppState): void {
     svg.appendChild(g);
   });
 
+  const showCables =
+    state.showCableRoutes || !!state.selectedConnectionId || (state.workspaceMode === 'system' && state.systemPhysicalView);
+  if (showCables && state.connections.length) {
+    const ctx = cableRouteContext(state, catalog);
+    state.connections.forEach((c) => {
+      if (state.selectedConnectionId && c.id !== state.selectedConnectionId && !state.showCableRoutes && !state.systemPhysicalView) {
+        return;
+      }
+      const route = cachedCableRoute(c, ctx);
+      const sel = state.selectedConnectionId === c.id;
+      route.segments.forEach((s) => {
+        const [x1, y1] = toPx(s.start.x, s.start.z);
+        const [x2, y2] = toPx(s.end.x, s.end.z);
+        svg.appendChild(
+          svgEl('line', {
+            x1,
+            y1,
+            x2,
+            y2,
+            stroke: sel ? '#2f8cff' : '#5aa88a',
+            'stroke-width': sel ? 2.4 : 1.4,
+            'stroke-opacity': sel ? 0.95 : 0.55,
+            fill: 'none'
+          })
+        );
+      });
+    });
+  }
+
   state.equipment.forEach((inst) => {
     if (state.hiddenEquipmentIds.includes(inst.instanceId)) return;
     const product = catalog.get(inst.productId);
@@ -369,7 +503,23 @@ export function renderPlanView(container: HTMLElement, state: AppState): void {
     svg.appendChild(g);
   });
 
-  svg.addEventListener('click', () => state.select('none', null));
+  svg.addEventListener('click', (e) => {
+    if (state.viewportTool === 'measure') {
+      const pt = svg.createSVGPoint();
+      pt.x = e.clientX;
+      pt.y = e.clientY;
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return;
+      const local = pt.matrixTransform(ctm.inverse());
+      const world = toWorld(local.x, local.y);
+      const targets = collectPlanTargets(state, room);
+      const snapped = nearestCadSnap(world.x, world.z, targets, state.gridSpacingM);
+      state.addMeasurePoint(snapped.x, snapped.z);
+      state.setSnapNote(`${snapped.kind} snap`);
+      return;
+    }
+    state.select('none', null);
+  });
   container.appendChild(svg);
 }
 
@@ -378,7 +528,7 @@ function enablePlanDrag(
   handle: SVGGraphicsElement,
   state: AppState,
   id: string,
-  kind: 'seat' | 'equipment' | 'table',
+  kind: 'seat' | 'equipment' | 'table' | 'rack',
   toWorld: (px: number, pz: number) => { x: number; z: number },
   room: RoomModel,
   originPx: number,
@@ -422,28 +572,38 @@ function enablePlanDrag(
     const dx = lastSvgX - startSvgX;
     const dy = lastSvgY - startSvgY;
     const worldPos = toWorld(originPx + dx, originPz + dy);
+    const cad = nearestCadSnap(worldPos.x, worldPos.z, collectPlanTargets(state, room, id), state.gridSpacingM);
+    const others = collectAlignOthers(state, id);
+    const guides = alignmentGuides({ x: cad.x, z: cad.z }, others);
+    state.setAlignmentGuides(guides);
 
     if (kind === 'seat') {
-      const snapped = snapSeatPosition(worldPos.x, worldPos.z);
-      state.updateSeat(id, snapped);
+      const snapped = snapSeatPosition(cad.x, cad.z);
+      state.updateSeat(id, snapped, { recordHistory: false });
     } else if (kind === 'table') {
       const table = state.tables.find((t) => t.id === id);
       if (table) {
-        const snapped = snapTablePosition(worldPos.x, worldPos.z, 0.05, room, table.sizeX, table.sizeZ);
-        state.updateTable(id, { centerX: snapped.x, centerZ: snapped.z });
+        const snapped = snapTablePosition(cad.x, cad.z, 0.05, room, table.sizeX, table.sizeZ);
+        state.updateTable(id, { centerX: snapped.x, centerZ: snapped.z }, { recordHistory: false });
+      }
+    } else if (kind === 'rack') {
+      const rack = state.racks.find((r) => r.id === id);
+      if (rack) {
+        const snapped = snapTablePosition(cad.x, cad.z, 0.05, room, rack.width, rack.depth);
+        state.updateRack(id, { x: snapped.x, z: snapped.z }, { recordHistory: false });
       }
     } else {
       const inst = state.equipment.find((e) => e.instanceId === id);
       const product = inst ? catalog.get(inst.productId) : null;
       if (inst && product) {
-        const snapped = snapEquipment(room, product, { ...inst.position, x: worldPos.x, z: worldPos.z }, inst.rotationY);
+        const snapped = snapEquipment(room, product, { ...inst.position, x: cad.x, z: cad.z }, inst.rotationY);
         state.updateEquipment(id, {
           position: snapped.position,
           rotationY: snapped.rotationY,
           wall: snapped.wall,
           placementMode: 'manual'
-        });
-        state.setSnapNote(snapped.note);
+        }, { recordHistory: false });
+        state.setSnapNote(`${cad.kind} · ${snapped.note}`);
       }
     }
     state.finishGesture();
@@ -452,6 +612,20 @@ function enablePlanDrag(
   handle.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
     e.preventDefault();
+    if (state.viewportTool === 'measure') return;
+    if (state.viewportTool === 'rotate' && kind === 'table') {
+      state.select('table', id);
+      state.rotateSelectedTable90();
+      return;
+    }
+    if (state.viewportTool === 'rotate' && kind === 'rack') {
+      const rack = state.racks.find((r) => r.id === id);
+      if (rack) {
+        state.select('rack', id);
+        state.updateRack(id, { rotationY: rack.rotationY + Math.PI / 2 });
+      }
+      return;
+    }
     dragging = true;
     const start = clientToSvg(e.clientX, e.clientY);
     startSvgX = start.x;
@@ -497,17 +671,109 @@ function drawColumns(svg: SVGSVGElement, room: RoomModel, toPx: (x: number, z: n
   });
 }
 
-function drawDimensions(svg: SVGSVGElement, room: RoomModel, w: number, d: number): void {
-  const widthDim = svgEl('text', { x: w / 2, y: -50, 'text-anchor': 'middle', 'font-size': 12, fill: '#4a4d52' });
+function drawDimensions(svg: SVGSVGElement, room: RoomModel, w: number, d: number, state: AppState): void {
+  const widthDim = svgEl('text', { x: w / 2, y: -50, 'text-anchor': 'middle', 'font-size': 13, fill: '#1f2328' });
   widthDim.textContent = `${room.width.toFixed(2)} m`;
+  widthDim.style.cursor = 'pointer';
+  widthDim.addEventListener('click', (e) => {
+    e.stopPropagation();
+    state.select('room', 'room');
+  });
   svg.appendChild(widthDim);
-  svg.appendChild(svgEl('line', { x1: 0, y1: -40, x2: w, y2: -40, stroke: '#9a978f', 'stroke-width': 1 }));
+  svg.appendChild(svgEl('line', { x1: 0, y1: -40, x2: w, y2: -40, stroke: '#8a919c', 'stroke-width': 1 }));
 
   const depthDim = svgEl('text', {
-    x: -50, y: d / 2, 'text-anchor': 'middle', 'font-size': 12, fill: '#4a4d52',
+    x: -50, y: d / 2, 'text-anchor': 'middle', 'font-size': 13, fill: '#1f2328',
     transform: `rotate(-90 ${-50} ${d / 2})`
   });
   depthDim.textContent = `${room.depth.toFixed(2)} m`;
+  depthDim.style.cursor = 'pointer';
+  depthDim.addEventListener('click', (e) => {
+    e.stopPropagation();
+    state.select('room', 'room');
+  });
   svg.appendChild(depthDim);
-  svg.appendChild(svgEl('line', { x1: -40, y1: 0, x2: -40, y2: d, stroke: '#9a978f', 'stroke-width': 1 }));
+  svg.appendChild(svgEl('line', { x1: -40, y1: 0, x2: -40, y2: d, stroke: '#8a919c', 'stroke-width': 1 }));
+}
+
+function drawPlanGrid(svg: SVGSVGElement, room: RoomModel, w: number, d: number, spacing: number): void {
+  const step = Math.max(0.05, spacing) * PX_PER_M;
+  for (let x = 0; x <= w + 0.5; x += step) {
+    svg.appendChild(svgEl('line', { x1: x, y1: 0, x2: x, y2: d, stroke: '#e4e7ec', 'stroke-width': 1 }));
+  }
+  for (let y = 0; y <= d + 0.5; y += step) {
+    svg.appendChild(svgEl('line', { x1: 0, y1: y, x2: w, y2: y, stroke: '#e4e7ec', 'stroke-width': 1 }));
+  }
+}
+
+function drawAlignmentGuides(
+  svg: SVGSVGElement,
+  guides: AlignmentGuide[],
+  toPx: (x: number, z: number) => [number, number],
+  w: number,
+  d: number
+): void {
+  guides.forEach((g) => {
+    if (g.axis === 'x') {
+      const [px] = toPx(g.value, 0);
+      svg.appendChild(svgEl('line', { x1: px, y1: -20, x2: px, y2: d + 20, stroke: '#2f6fed', 'stroke-width': 1, 'stroke-dasharray': '4 3' }));
+    } else {
+      const [, pz] = toPx(0, g.value);
+      svg.appendChild(svgEl('line', { x1: -20, y1: pz, x2: w + 20, y2: pz, stroke: '#2f6fed', 'stroke-width': 1, 'stroke-dasharray': '4 3' }));
+    }
+  });
+}
+
+function drawMeasureOverlay(svg: SVGSVGElement, state: AppState, toPx: (x: number, z: number) => [number, number]): void {
+  const pts = state.measurePoints;
+  pts.forEach((p) => {
+    const [px, pz] = toPx(p.x, p.z);
+    svg.appendChild(svgEl('circle', { cx: px, cy: pz, r: 4, fill: '#2f6fed' }));
+  });
+  if (pts.length === 2) {
+    const [a, b] = pts;
+    const [x1, y1] = toPx(a.x, a.z);
+    const [x2, y2] = toPx(b.x, b.z);
+    svg.appendChild(svgEl('line', { x1, y1, x2, y2, stroke: '#2f6fed', 'stroke-width': 1.5 }));
+    const label = svgEl('text', {
+      x: (x1 + x2) / 2,
+      y: (y1 + y2) / 2 - 6,
+      'text-anchor': 'middle',
+      'font-size': 12,
+      fill: '#1f2328'
+    });
+    label.textContent = `${(state.measureDistanceM ?? 0).toFixed(2)} m`;
+    svg.appendChild(label);
+  }
+}
+
+function collectPlanTargets(state: AppState, room: RoomModel, excludeId?: string) {
+  const targets = [...roomCadTargets(room)];
+  state.tables.forEach((t) => {
+    if (t.id === excludeId) return;
+    targets.push(...boxCadTargets(t.centerX, t.centerZ, t.sizeX, t.sizeZ));
+  });
+  state.racks.forEach((r) => {
+    if (r.id === excludeId) return;
+    targets.push(...boxCadTargets(r.x, r.z, r.width, r.depth));
+  });
+  state.equipment.forEach((e) => {
+    if (e.instanceId === excludeId) return;
+    targets.push(...boxCadTargets(e.position.x, e.position.z, 0.4, 0.4));
+  });
+  return targets;
+}
+
+function collectAlignOthers(state: AppState, excludeId: string): Array<{ x: number; z: number }> {
+  const out: Array<{ x: number; z: number }> = [{ x: 0, z: 0 }];
+  state.tables.forEach((t) => {
+    if (t.id !== excludeId) out.push({ x: t.centerX, z: t.centerZ });
+  });
+  state.racks.forEach((r) => {
+    if (r.id !== excludeId) out.push({ x: r.x, z: r.z });
+  });
+  state.equipment.forEach((e) => {
+    if (e.instanceId !== excludeId) out.push({ x: e.position.x, z: e.position.z });
+  });
+  return out;
 }

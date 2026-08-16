@@ -160,6 +160,6 @@ export function viewingHealthFromSummary(summary: DesignHealthSummary, hasDispla
   };
 }
 
-export function projectObstacles(room: RoomModel | null, tables: TableSpec[]) {
-  return obstaclesFromProject(room, tables);
+export function projectObstacles(room: RoomModel | null, tables: TableSpec[], racks: import('./AVRack').AVRack[] = []) {
+  return obstaclesFromProject(room, tables, racks);
 }

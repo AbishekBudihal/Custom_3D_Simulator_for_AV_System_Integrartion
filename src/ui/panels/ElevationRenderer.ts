@@ -10,6 +10,7 @@
 import type { AppState } from '../../app/AppState';
 import { getActiveDisplay, analyzeSeatAgainstDisplay, DEFAULT_EYE_HEIGHT_M, projectObstacles } from '../../av/DesignAnalysis';
 import { loadDefaultCatalog } from '../../catalog/loadCatalog';
+import { usedRackUnits } from '../../av/AVRack';
 
 const catalog = loadDefaultCatalog();
 const PX_PER_M = 70;
@@ -28,6 +29,11 @@ export function renderElevationView(container: HTMLElement, state: AppState): vo
     empty.className = 'plan-empty';
     empty.textContent = 'Define a room to see the elevation.';
     container.appendChild(empty);
+    return;
+  }
+
+  if (state.selection.kind === 'rack' && state.selection.id) {
+    renderRackElevation(container, state, state.selection.id);
     return;
   }
 
@@ -126,6 +132,43 @@ export function renderElevationView(container: HTMLElement, state: AppState): vo
     }
   }
 
+  container.appendChild(svg);
+}
+
+function renderRackElevation(container: HTMLElement, state: AppState, rackId: string): void {
+  const rack = state.racks.find((r) => r.id === rackId);
+  if (!rack) return;
+  const assigned = state.equipment
+    .filter((e) => e.rackId === rack.id)
+    .sort((a, b) => (a.rackPositionRU ?? 0) - (b.rackPositionRU ?? 0));
+  const used = usedRackUnits(assigned);
+  const ruH = 18;
+  const pad = 24;
+  const width = 280;
+  const height = pad * 2 + 28 + rack.ruTotal * ruH;
+  const svg = svgEl('svg', { width: '100%', height: '100%', viewBox: `0 0 ${width} ${Math.min(height, 900)}` });
+  svg.style.background = '#eceae6';
+  const title = svgEl('text', { x: width / 2, y: 18, 'text-anchor': 'middle', 'font-size': 13, fill: '#232427', 'font-weight': '600' });
+  title.textContent = 'AV RACK';
+  svg.appendChild(title);
+  let y = pad + 8;
+  assigned.forEach((e) => {
+    const ru = e.rackUnits && e.rackUnits > 0 ? e.rackUnits : 1;
+    const h = ru * ruH;
+    svg.appendChild(svgEl('rect', { x: 24, y, width: width - 48, height: h - 2, fill: '#3a3d44', stroke: '#1f2126' }));
+    const lab = svgEl('text', { x: 36, y: y + h / 2, 'font-size': 11, fill: '#f4f1ea', 'dominant-baseline': 'middle' });
+    lab.textContent = e.rackUnits && e.rackUnits > 0 ? `${e.name}  ${e.rackUnits}RU` : `${e.name}  DATA INCOMPLETE`;
+    svg.appendChild(lab);
+    y += h;
+  });
+  const avail = rack.ruTotal - used;
+  if (avail > 0) {
+    const h = Math.max(avail * ruH, 40);
+    svg.appendChild(svgEl('rect', { x: 24, y, width: width - 48, height: h - 2, fill: '#d8d4cc', stroke: '#9a978f', 'stroke-dasharray': '4 3' }));
+    const lab = svgEl('text', { x: width / 2, y: y + h / 2, 'text-anchor': 'middle', 'font-size': 12, fill: '#5c5a54', 'dominant-baseline': 'middle' });
+    lab.textContent = `AVAILABLE  ${avail} RU`;
+    svg.appendChild(lab);
+  }
   container.appendChild(svg);
 }
 

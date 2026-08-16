@@ -8,7 +8,7 @@ import { loadDefaultCatalog } from '../../catalog/loadCatalog';
 import { canConnectPorts } from '../../system/PortCompatibility';
 import { resolveInstancePorts } from '../../system/PortResolver';
 import { enumerateSignalPaths, pathLabel } from '../../system/SignalPathEngine';
-import { NODE_W, nodeHeight, orthoPath } from '../../system/SystemLayout';
+import { NODE_W, nodeHeight, orthoPath, disciplineForCategory } from '../../system/SystemLayout';
 import type { ResolvedPort } from '../../system/SystemTypes';
 import { validationReportFor } from '../../av/validation/validationCache';
 
@@ -72,6 +72,21 @@ export function renderSystemCanvas(container: HTMLElement, state: AppState): voi
   );
   svg.setAttribute('width', String(maxX + 120));
   svg.setAttribute('height', String(maxY + 120));
+
+  const discX = new Map<string, number>();
+  visible.forEach((inst) => {
+    const disc = disciplineForCategory(catalog.get(inst.productId)?.category ?? '');
+    const x = state.systemLayout[inst.instanceId]?.x ?? 0;
+    if (!discX.has(disc) || x < (discX.get(disc) ?? 0)) discX.set(disc, x);
+  });
+  discX.forEach((x, label) => {
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t.setAttribute('x', String(x));
+    t.setAttribute('y', '16');
+    t.setAttribute('class', 'sys-wire-label');
+    t.textContent = label.toUpperCase();
+    svg.appendChild(t);
+  });
 
   state.connections.forEach((c) => {
     if (hiddenIds.has(c.fromInstanceId) || hiddenIds.has(c.toInstanceId)) return;
@@ -201,8 +216,13 @@ function renderToolbar(state: AppState): HTMLElement {
     mkBtn('Auto Layout', () => state.autoLayoutSystem()),
     mkBtn('Group', () => state.groupSelected()),
     mkBtn('Validate', () => state.setWorkspaceMode('validate')),
+    mkBtn('Diagram', () => state.setSystemPhysicalView(false), !state.systemPhysicalView),
+    mkBtn('Room routes', () => {
+      state.setShowCableRoutes(true);
+      state.setSystemPhysicalView(true);
+    }, state.systemPhysicalView),
     mkBtn('Edit', () => state.setSystemCanvasMode('edit'), state.systemCanvasMode === 'edit'),
-    mkBtn('Schematic', () => state.setSystemCanvasMode('schematic'), state.systemCanvasMode === 'schematic'),
+    mkBtn('Labeled', () => state.setSystemCanvasMode('schematic'), state.systemCanvasMode === 'schematic'),
     mkBtn('Beginner', () => state.setSystemDetailMode('beginner'), state.systemDetailMode === 'beginner'),
     mkBtn('Pro', () => state.setSystemDetailMode('pro'), state.systemDetailMode === 'pro')
   );
@@ -284,6 +304,7 @@ function renderNode(state: AppState, instanceId: string): SVGGElement {
   addText(g, '12', '14', 'sys-node-sub', (product?.manufacturer ?? '').slice(0, 28));
   addText(g, '12', '30', 'sys-node-title', inst.name.slice(0, 26));
   addText(g, '12', '44', 'sys-node-cat', (product?.category ?? 'device').toUpperCase());
+  if (inst.rackId) addText(g, '140', '44', 'sys-node-sub', `RACK ${inst.rackId}`);
   if (!ports.length) addText(g, '12', '64', 'sys-node-warn', 'DATA INCOMPLETE');
 
   if (state.systemCanvasMode !== 'schematic') {

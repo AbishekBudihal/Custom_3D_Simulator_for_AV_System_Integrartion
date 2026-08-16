@@ -10,6 +10,7 @@ import type { Seat, TableSpec } from '../room/SeatingGenerator';
 import type { EquipmentInstance } from '../catalog/EquipmentCatalog';
 import type { Selection } from './AppState';
 import type { SystemConnection, SystemGroup, SystemRoute } from '../system/SystemTypes';
+import type { AVRack } from '../av/AVRack';
 
 export interface AppStateSnapshot {
   room: RoomModel | null;
@@ -18,6 +19,7 @@ export interface AppStateSnapshot {
   equipment: EquipmentInstance[];
   connections: SystemConnection[];
   routes: SystemRoute[];
+  racks: AVRack[];
   systemGroups: SystemGroup[];
   systemLayout: Record<string, { x: number; y: number }>;
   selection: Selection;
@@ -70,6 +72,7 @@ export function cloneSnapshot(s: AppStateSnapshot): AppStateSnapshot {
   const cloned = JSON.parse(JSON.stringify(s)) as AppStateSnapshot;
   cloned.connections = cloned.connections ?? [];
   cloned.routes = cloned.routes ?? [];
+  cloned.racks = cloned.racks ?? [];
   cloned.systemGroups = cloned.systemGroups ?? [];
   cloned.systemLayout = cloned.systemLayout ?? {};
   return cloned;

@@ -9,17 +9,20 @@
  */
 
 import type { RoomModel } from './RoomModel';
+import type { FurnitureShape } from './FurnitureCatalog';
+import { furnitureTemplate } from './FurnitureCatalog';
 import { getPresentationWall, presentationRotation, rotatePoint, normalizeAngle } from './RoomGeometry';
-import {
-  conferenceTemplateId,
-  conferenceWidthForCapacity,
-  furnitureTemplate,
-  type FurnitureShape
-} from './FurnitureCatalog';
+import type { Aabb } from './FurnitureGeometry';
+import { generateConferenceLayout } from './ConferenceLayout';
+import { generateFlexibleLayout, generateIndependentTables } from './IndependentTableLayout';
 
 export type SeatingLayout =
   | 'boardroom'
+  | 'conference'
   | 'classroom'
+  | 'training'
+  | 'flexible'
+  | 'custom'
   | 'theater'
   | 'u_shape'
   | 'hollow_square'
@@ -34,6 +37,8 @@ export interface SeatingConfig {
   rearClearance: number;  // m, from rear wall
   frontClearance: number; // m, from front/display wall
   aisleWidth: number;     // m
+  /** Optional keep-outs (rack service envelope, etc.). View of architectural exclusions is always applied. */
+  exclusions?: Aabb[];
 }
 
 export interface Seat {
@@ -51,6 +56,9 @@ export interface Seat {
    */
   facing: number;
   hasTable: boolean;
+  /** Owning TableSpec id. Never infer a table by grouping chairs. */
+  tableId?: string;
+  zoneId?: string;
 }
 
 /**
@@ -83,6 +91,7 @@ export interface TableSpec {
   shape?: FurnitureShape;
   furnitureId?: string;
   hasCableWell?: boolean;
+  zoneId?: string;
 }
 
 export interface SeatingGenerationResult {
@@ -150,9 +159,14 @@ export function generateSeating(room: RoomModel, cfg: SeatingConfig): SeatingGen
 function generateByLayout(room: RoomModel, cfg: SeatingConfig): SeatingGenerationResult {
   switch (cfg.layout) {
     case 'boardroom':
-      return generateBoardroom(room, cfg);
+    case 'conference':
+      return generateConferenceLayout(room, cfg);
     case 'classroom':
-      return generateClassroom(room, cfg);
+    case 'training':
+      return generateIndependentTables(room, cfg, { seatsPerTable: 2 });
+    case 'flexible':
+    case 'custom':
+      return generateFlexibleLayout(room, cfg);
     case 'theater':
     case 'auditorium_tiered':
       return generateTheater(room, cfg);
@@ -161,7 +175,7 @@ function generateByLayout(room: RoomModel, cfg: SeatingConfig): SeatingGeneratio
     case 'hollow_square':
       return generateHollowSquare(room, cfg);
     default:
-      return generateClassroom(room, cfg);
+      return generateIndependentTables(room, cfg, { seatsPerTable: 2 });
   }
 }
 
@@ -193,126 +207,21 @@ function makeTable(
   };
 }
 
-function distributeConference(n: number): { left: number; right: number; head: number } {
-  if (n <= 2) return { left: 1, right: n === 2 ? 1 : 0, head: 0 };
-  if (n <= 6) {
-    const left = Math.ceil(n / 2);
-    return { left, right: n - left, head: 0 };
-  }
-  const head = 1;
-  const sides = n - head;
-  const left = Math.ceil(sides / 2);
-  return { left, right: sides - left, head };
-}
-
-function generateBoardroom(room: RoomModel, cfg: SeatingConfig): SeatingGenerationResult {
-  const warnings: string[] = [];
+function generateTheater(room: RoomModel, cfg: SeatingConfig): SeatingGenerationResult {
   const seats: Seat[] = [];
-  const n = cfg.capacity;
-  const tmplId = conferenceTemplateId(n);
-  const tmpl = furnitureTemplate(tmplId);
-  const tableW = conferenceWidthForCapacity(n);
-  const spacing = Math.max(0.6, cfg.seatWidth);
-  const dist = distributeConference(n);
-  const perLong = Math.max(dist.left, dist.right, 1);
-  const tableL = perLong * spacing + 0.28;
-  const chairFromEdge = tmpl.chairFromEdge;
-  const needHalfW = tableW / 2 + chairFromEdge + CHAIR_BEHIND + MIN_WALK;
-  const front = Math.max(1.5, Math.min(cfg.frontClearance, tmpl.clearanceFront));
-  const rearNeed = tableL / 2 + (dist.head ? chairFromEdge + CHAIR_BEHIND : 0.1) + Math.max(MIN_WALK, cfg.rearClearance * 0.75);
-
-  let centerZ = -room.depth / 2 + front + tableL / 2;
-  const maxCenterZ = room.depth / 2 - rearNeed;
-  if (centerZ > maxCenterZ) centerZ = ( -room.depth / 2 + front + tableL / 2 + maxCenterZ) / 2;
-
-  const table: TableSpec = makeTable('conference-table', tmplId, 0, centerZ, tableW, tableL);
-
-  const leftX = table.centerX - tableW / 2 - chairFromEdge;
-  const rightX = table.centerX + tableW / 2 + chairFromEdge;
-  const z0 = table.centerZ - ((perLong - 1) * spacing) / 2;
-
-  const placeSide = (count: number, x: number, facing: number, prefix: string, row: number) => {
-    for (let i = 0; i < count; i++) {
-      seats.push({
-        id: `${prefix}${i + 1}`,
-        row,
-        indexInRow: i + 1,
-        x,
-        z: z0 + i * spacing,
-        facing,
-        hasTable: true
-      });
-    }
-  };
-  placeSide(dist.left, leftX, -Math.PI / 2, 'L', 1);
-  placeSide(dist.right, rightX, Math.PI / 2, 'R', 2);
-  if (dist.head) {
-    seats.push({
-      id: 'HEAD',
-      row: 3,
-      indexInRow: 1,
-      x: 0,
-      z: table.centerZ + tableL / 2 + chairFromEdge,
-      facing: 0,
-      hasTable: true
-    });
-  }
-
-  const envelopeHalfW = Math.max(Math.abs(leftX), Math.abs(rightX)) + CHAIR_BEHIND;
-  const minZ = Math.min(...seats.map((s) => s.z), table.centerZ - tableL / 2);
-  const maxZ = Math.max(...seats.map((s) => s.z), table.centerZ + tableL / 2);
-  if (needHalfW > room.width / 2 || envelopeHalfW + MIN_WALK > room.width / 2) {
-    warnings.push(
-      `${n} seats cannot be accommodated with the selected room width and required circulation.`
-    );
-  }
-  if (minZ < -room.depth / 2 + 0.3 || maxZ + CHAIR_BEHIND > room.depth / 2 - 0.3) {
-    warnings.push(
-      `${n} seats cannot be accommodated with the selected room length and required circulation.`
-    );
-  }
-  const sideClear = room.width / 2 - envelopeHalfW;
-  if (sideClear < cfg.sideClearance) {
-    warnings.push(`Side circulation ${sideClear.toFixed(2)} m is below the ${cfg.sideClearance} m target.`);
-  }
-
-  const valid = seats.length === n && warnings.filter((w) => w.includes('cannot be accommodated')).length === 0;
-  if (seats.length < n) {
-    warnings.push(`Conference layout placed ${seats.length} of ${n} requested seats.`);
-  }
-
-  return {
-    seats,
-    tables: [table],
-    warnings,
-    valid,
-    layoutReason: `Conference table (${tableW.toFixed(2)} × ${tableL.toFixed(2)} m) sized from ${n} seats and circulation, not from room width.`
-  };
-}
-
-function generateClassroom(room: RoomModel, cfg: SeatingConfig): SeatingGenerationResult {
-  const seats: Seat[] = [];
-  const tables: TableSpec[] = [];
   const warnings: string[] = [];
-  const desk = furnitureTemplate('generic-training-desk');
+  const pitch = Math.max(0.9, cfg.rowPitch * 0.85);
   const usableW = room.width - 2 * cfg.sideClearance;
   const seatsPerRow = Math.max(1, Math.floor(usableW / cfg.seatWidth));
   const usableDepth = room.depth - cfg.frontClearance - cfg.rearClearance;
-  const maxRows = Math.max(1, Math.floor(usableDepth / cfg.rowPitch) + 1);
-  const deskDepth = desk.typicalWidth;
-
+  const maxRows = Math.max(1, Math.floor(usableDepth / pitch) + 1);
   let placed = 0;
   let row = 0;
   while (placed < cfg.capacity && row < maxRows) {
     const inThisRow = Math.min(seatsPerRow, cfg.capacity - placed);
     const rowSpan = Math.max(cfg.seatWidth, (inThisRow - 1) * cfg.seatWidth);
     const startX = -rowSpan / 2;
-    const seatZ = -room.depth / 2 + cfg.frontClearance + row * cfg.rowPitch;
-    const deskZ = seatZ - desk.chairFromEdge - deskDepth / 2;
-    const deskLen = inThisRow * cfg.seatWidth * 0.92;
-    tables.push(
-      makeTable(`desk-${row + 1}`, 'generic-training-desk', 0, deskZ, deskLen, deskDepth, { shape: 'rect', hasCableWell: false })
-    );
+    const seatZ = -room.depth / 2 + cfg.frontClearance + row * pitch;
     for (let s = 0; s < inThisRow; s++) {
       seats.push({
         id: `R${row + 1}-S${s + 1}`,
@@ -321,35 +230,20 @@ function generateClassroom(room: RoomModel, cfg: SeatingConfig): SeatingGenerati
         x: startX + s * cfg.seatWidth,
         z: seatZ,
         facing: 0,
-        hasTable: true
+        hasTable: false
       });
       placed++;
     }
     row++;
   }
-
   if (placed < cfg.capacity) {
-    warnings.push(
-      `${cfg.capacity} seats cannot be accommodated with the selected room dimensions and required circulation. Placed ${placed}.`
-    );
+    warnings.push(`${cfg.capacity} seats cannot be accommodated with the selected room dimensions and required circulation. Placed ${placed}.`);
   }
-
   return {
     seats,
-    tables,
+    tables: [],
     warnings,
     valid: placed === cfg.capacity,
-    layoutReason: `Classroom: one training desk per row, length from seats in that row (${tables.length} desk(s)).`
-  };
-}
-
-function generateTheater(room: RoomModel, cfg: SeatingConfig): SeatingGenerationResult {
-  const tightCfg: SeatingConfig = { ...cfg, rowPitch: Math.max(0.9, cfg.rowPitch * 0.85) };
-  const result = generateClassroom(room, tightCfg);
-  result.seats.forEach((s) => (s.hasTable = false));
-  return {
-    ...result,
-    tables: [],
     layoutReason: 'Theater: seats only, no tables.'
   };
 }

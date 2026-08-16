@@ -14,6 +14,7 @@ import type { AppState } from '../app/AppState';
 import { generateRoomGeometry } from '../room/RoomGenerator';
 import { renderSeating } from '../room/SeatingRenderer';
 import { renderEquipment } from '../room/EquipmentRenderer';
+import { renderRacks } from '../room/RackRenderer';
 import { CameraController } from './CameraController';
 import { loadDefaultCatalog } from '../catalog/loadCatalog';
 import type { CheckStatus, DisplayPlacement } from '../av/ViewingDistanceEngine';
@@ -21,10 +22,18 @@ import { DEFAULT_EYE_HEIGHT_M, getActiveDisplay, computeSeatStatuses, projectObs
 import { computeViewerPose } from '../av/ViewerPose';
 import { cachedCoverage } from '../av/coverageCache';
 import { cachedMicCoverage } from '../av/micCoverageCache';
-import { overlayLayerForFinding } from '../av/simulation/AnalysisLayer';
+import { occupantEyeWorld } from '../av/simulation/OccupantPoint';
+import { contourPolylines, fieldFromCells } from '../av/simulation/SpatialField';
+import { evaluateSightlineDetailed } from '../av/SightlineEngine';
 import { addFloorHeatmap } from './HeatmapMesh';
 import { addPickupRegionOverlay } from './PickupRegionMesh';
-import { STATUS_RGB } from '../av/HeatmapEngine';
+import { addContourOverlay } from './ContourOverlay';
+import { addSightlineRay } from './SightlineOverlay';
+import { addCameraFrustumOverlay } from './FrustumOverlay';
+import { addSpeakerCoverageVolume } from './CoverageVolumeOverlay';
+import { addCableRouteOverlays } from './CableRouteOverlay';
+import { cachedCableRoute } from '../system/CableRouter';
+import { cableRouteContext } from '../system/cableContext';
 import { snapEquipment } from '../interaction/SnapEngine';
 import {
   computeSeatMicStatuses,
@@ -55,7 +64,9 @@ export class SceneManager {
   private roomGroup = new THREE.Group();
   private seatingGroup = new THREE.Group();
   private equipmentGroup = new THREE.Group();
+  private rackGroup = new THREE.Group();
   private analysisGroup = new THREE.Group();
+  private cableGroup = new THREE.Group();
   private transformControls: TransformControls;
   private selectedMesh: THREE.Object3D | null = null;
   private heatmapMesh: THREE.Mesh | null = null;
@@ -63,13 +74,16 @@ export class SceneManager {
   private lastRoomSignature = '';
   private lastSeatsSignature = '';
   private lastEquipSignature = '';
+  private lastRacksSignature = '';
   private lastSelectionSignature = '';
   private lastViewerSignature = '';
   private lastTransformMode = '';
   private lastFocusRequest = 0;
+  private lastCameraViewTick = 0;
   private lastFindingFocus = 0;
   private lastAnalysisSignature = '';
   private lastVizBuildSignature = '';
+  private lastCableSignature = '';
   private dragging = false;
 
   private raycaster = new THREE.Raycaster();
@@ -77,7 +91,7 @@ export class SceneManager {
 
   constructor(private container: HTMLElement, private state: AppState) {
     this.scene.background = new THREE.Color(0xf2f1ee);
-    this.scene.add(this.roomGroup, this.seatingGroup, this.equipmentGroup, this.analysisGroup);
+    this.scene.add(this.roomGroup, this.seatingGroup, this.equipmentGroup, this.rackGroup, this.analysisGroup, this.cableGroup);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.shadowMap.enabled = true;
@@ -144,6 +158,7 @@ export class SceneManager {
     }
 
     const seatsSig = JSON.stringify(this.state.seats) + JSON.stringify(this.state.tables);
+    const racksSig = JSON.stringify(this.state.racks);
     const equipSig = JSON.stringify(this.state.equipment);
     const selectionSig = JSON.stringify(this.state.selection) + JSON.stringify(this.state.highlightedSeatIds);
     const analysisSig =
@@ -196,8 +211,15 @@ export class SceneManager {
       this.attachTransformToSelection();
     }
 
+    if (racksSig !== this.lastRacksSignature || selectionSig !== this.lastSelectionSignature) {
+      const selectedRackId = this.state.selection.kind === 'rack' ? this.state.selection.id : null;
+      while (this.rackGroup.children.length) this.rackGroup.remove(this.rackGroup.children[0]);
+      this.rackGroup.add(renderRacks(this.state.racks, selectedRackId));
+    }
+
     this.lastSeatsSignature = seatsSig;
     this.lastEquipSignature = equipSig;
+    this.lastRacksSignature = racksSig;
     this.lastSelectionSignature = selectionSig;
     this.lastAnalysisSignature = analysisSig;
 
@@ -209,6 +231,13 @@ export class SceneManager {
     if (this.state.focusRequest !== this.lastFocusRequest) {
       this.lastFocusRequest = this.state.focusRequest;
       this.focusSelection();
+    }
+    if (this.state.cameraViewTick !== this.lastCameraViewTick) {
+      this.lastCameraViewTick = this.state.cameraViewTick;
+      const room = this.state.room;
+      if (room) {
+        this.cameraController.applyViewPreset(this.state.cameraView, room.width, room.depth, room.height);
+      }
     }
     if (this.state.findingFocusRequest !== this.lastFindingFocus) {
       this.lastFindingFocus = this.state.findingFocusRequest;
@@ -230,6 +259,20 @@ export class SceneManager {
     if (vizBuildSig !== this.lastVizBuildSignature) {
       this.lastVizBuildSignature = vizBuildSig;
       this.syncAnalysisViz();
+    }
+    const cableSig =
+      JSON.stringify(this.state.connections) +
+      this.state.selectedConnectionId +
+      this.state.showCableRoutes +
+      this.state.systemPhysicalView +
+      this.state.workspaceMode +
+      JSON.stringify(this.state.equipment) +
+      JSON.stringify(this.state.tables) +
+      JSON.stringify(this.state.racks) +
+      JSON.stringify(this.state.room);
+    if (cableSig !== this.lastCableSignature) {
+      this.lastCableSignature = cableSig;
+      this.syncCableViz();
     }
   }
 
@@ -267,23 +310,44 @@ export class SceneManager {
     }
 
     this.clearAnalysisGroup();
-    const obstacles = projectObstacles(room!, this.state.tables);
+    const obstacles = projectObstacles(room!, this.state.tables, this.state.racks);
+
+    const addFieldContours = (
+      grid: { cols: number; rows: number; cells: Array<{ col: number; row: number; x: number; z: number; overall: import('../av/ViewingDistanceEngine').CheckStatus; score?: number; masked?: boolean }> },
+      enabled: boolean
+    ) => {
+      if (!enabled || !room) return;
+      const field = fieldFromCells(room, grid.cols, grid.rows, grid.cells, this.state.tables, this.state.racks);
+      addContourOverlay(this.analysisGroup, contourPolylines(field, [0.5, 0.85]));
+    };
 
     if (needCamera && cameraViz.heatmap && room) {
       const cameras = usableCameraPlacements(resolveProjectCameras(this.state.equipment, catalog));
       const { grid, image } = cachedCameraCoverage(room, cameras, obstacles, cameraViz.samplingQuality);
       this.heatmapMesh = addFloorHeatmap(this.analysisGroup, room, grid, image);
+      addFieldContours(grid, cameraViz.contours);
     } else if (needAudio && audioViz.heatmap && room) {
       const speakers = usableSpeakerPlacements(resolveProjectSpeakers(this.state.equipment, catalog));
       const { grid, image } = cachedSpeakerCoverage(room, speakers, audioViz.samplingQuality);
       this.heatmapMesh = addFloorHeatmap(this.analysisGroup, room, grid, image);
+      addFieldContours(grid, audioViz.contours);
     } else if (needMic && micViz.heatmap && room) {
       const mics = usableMicPlacements(resolveProjectMicrophones(this.state.equipment, catalog));
       const { grid, image } = cachedMicCoverage(room, mics, micViz.samplingQuality);
       this.heatmapMesh = addFloorHeatmap(this.analysisGroup, room, grid, image);
+      addFieldContours(grid, micViz.contours);
     } else if (needDisplay && viz.heatmap && display && room) {
-      const { grid, image } = cachedCoverage(room, display, obstacles, viz.samplingQuality);
+      const { grid, image } = cachedCoverage(
+        room,
+        display,
+        obstacles,
+        viz.samplingQuality,
+        viz.heatmapMetric,
+        this.state.tables,
+        this.state.racks
+      );
       this.heatmapMesh = addFloorHeatmap(this.analysisGroup, room, grid, image);
+      addFieldContours(grid, viz.contours);
     }
 
     if (needCamera && cameraViz.fovRegions && room) {
@@ -291,6 +355,9 @@ export class SceneManager {
         if (!cam.coverageRegion) return;
         const selected = this.state.selection.kind === 'equipment' && this.state.selection.id === cam.instanceId;
         addPickupRegionOverlay(this.analysisGroup, cam.coverageRegion, selected, 0x6b5cff);
+        if (!cam.incomplete) {
+          addCameraFrustumOverlay(this.analysisGroup, cam, selected);
+        }
       });
     }
 
@@ -311,24 +378,28 @@ export class SceneManager {
           const cam = this.state.equipment.find((e) => e.instanceId === camId);
           const seat = this.state.seats.find((s) => s.id === r.seatId);
           if (!cam || !seat) return;
-          const geom = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(seat.x, DEFAULT_EYE_HEIGHT_M, seat.z),
-            new THREE.Vector3(cam.position.x, cam.position.y, cam.position.z)
-          ]);
-          this.analysisGroup.add(
-            new THREE.Line(
-              geom,
-              new THREE.LineBasicMaterial({ color: 0xd6483f, transparent: true, opacity: 0.9 })
-            )
+          const eye = occupantEyeWorld(seat);
+          const detailed = evaluateSightlineDetailed(
+            { seatId: seat.id, x: cam.position.x, z: cam.position.z, eyeHeightM: cam.position.y },
+            { x: seat.x, z: seat.z, y: eye.y },
+            obstacles
+          );
+          addSightlineRay(
+            this.analysisGroup,
+            { x: eye.x, y: eye.y, z: eye.z },
+            { x: cam.position.x, y: cam.position.y, z: cam.position.z },
+            'fail',
+            detailed.hit
           );
         });
     }
 
     if (needAudio && audioViz.coverageRegions && room) {
       resolveProjectSpeakers(this.state.equipment, catalog).forEach((sp) => {
-        if (!sp.coverageRegion) return;
+        if (sp.incomplete) return;
         const selected = this.state.selection.kind === 'equipment' && this.state.selection.id === sp.instanceId;
-        addPickupRegionOverlay(this.analysisGroup, sp.coverageRegion, selected, 0xd68c32);
+        if (sp.coverageRegion) addPickupRegionOverlay(this.analysisGroup, sp.coverageRegion, selected, 0xd68c32);
+        addSpeakerCoverageVolume(this.analysisGroup, sp, selected);
       });
     }
 
@@ -341,7 +412,7 @@ export class SceneManager {
       });
     }
 
-    if (needDisplay && display && (viz.sightlines !== 'off' || this.state.highlightedSeatIds.length) && overlayLayerForFinding(this.state.selectedFindingId ?? '') === 'display') {
+    if (needDisplay && display && (viz.sightlines !== 'off' || this.state.highlightedSeatIds.length)) {
       const highlight = this.state.highlightedSeatIds;
       const seats =
         highlight.length
@@ -353,23 +424,45 @@ export class SceneManager {
               : [];
       const statuses = computeSeatStatuses(this.state.seats, display, obstacles);
       seats.forEach((seat) => {
-        const status = statuses.get(seat.id) ?? 'fail';
-        const [r, g, b] = STATUS_RGB[status];
-        const geom = new THREE.BufferGeometry().setFromPoints([
-          new THREE.Vector3(seat.x, DEFAULT_EYE_HEIGHT_M, seat.z),
-          new THREE.Vector3(display.position.x, display.position.y, display.position.z)
-        ]);
-        const line = new THREE.Line(
-          geom,
-          new THREE.LineBasicMaterial({
-            color: new THREE.Color(r / 255, g / 255, b / 255),
-            transparent: true,
-            opacity: 0.85
-          })
+        const eye = occupantEyeWorld(seat);
+        const detailed = evaluateSightlineDetailed(
+          { seatId: seat.id, x: seat.x, z: seat.z, eyeHeightM: eye.y },
+          { x: display.position.x, z: display.position.z, y: display.position.y },
+          obstacles
         );
-        this.analysisGroup.add(line);
+        addSightlineRay(
+          this.analysisGroup,
+          eye,
+          display.position,
+          statuses.get(seat.id) ?? 'fail',
+          detailed.hit
+        );
       });
     }
+  }
+
+  private syncCableViz(): void {
+    while (this.cableGroup.children.length) {
+      const child = this.cableGroup.children[0];
+      this.cableGroup.remove(child);
+      const line = child as THREE.Line;
+      if (line.geometry) line.geometry.dispose();
+      const mat = line.material as THREE.Material | THREE.Material[] | undefined;
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+      else if (mat) mat.dispose();
+    }
+    const show =
+      this.state.showCableRoutes ||
+      !!this.state.selectedConnectionId ||
+      (this.state.workspaceMode === 'system' && this.state.systemPhysicalView);
+    if (!show || !this.state.connections.length) return;
+    const ctx = cableRouteContext(this.state, catalog);
+    const items = this.state.connections.map((c) => ({
+      route: cachedCableRoute(c, ctx),
+      signalType: c.signalType,
+      selected: this.state.selectedConnectionId === c.id || this.state.highlightedConnectionIds.includes(c.id)
+    }));
+    addCableRouteOverlays(this.cableGroup, items, this.state.showCableRoutes || this.state.systemPhysicalView);
   }
 
   private updateTransformVisibility(): void {
@@ -471,6 +564,17 @@ export class SceneManager {
       }
     }
 
+    if (this.state.selection.kind === 'rack' && this.state.selection.id) {
+      const rack = this.state.racks.find((r) => r.id === this.state.selection.id);
+      if (rack) {
+        const pos = new THREE.Vector3(rack.x, rack.y, rack.z);
+        this.cameraController.camera.position.set(pos.x + 2.2, pos.y + 1.4, pos.z + 2.2);
+        this.cameraController.controls.target.copy(pos);
+        this.cameraController.controls.update();
+        return;
+      }
+    }
+
     if (this.state.selection.kind === 'seat' && this.state.selection.id) {
       const seat = this.state.seats.find((s) => s.id === this.state.selection.id);
       if (seat) {
@@ -550,6 +654,15 @@ export class SceneManager {
           this.state.select('seat', seatId);
           return;
         }
+      }
+    }
+
+    const rackHits = this.raycaster.intersectObjects(this.rackGroup.children, true);
+    for (const hit of rackHits) {
+      const rackId = hit.object.userData?.rackId;
+      if (rackId) {
+        this.state.select('rack', rackId);
+        return;
       }
     }
 

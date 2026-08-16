@@ -17,12 +17,12 @@ import type { Seat, TableSpec } from './SeatingGenerator';
 import type { CheckStatus } from '../av/ViewingDistanceEngine';
 import { seatForward } from './RoomGeometry';
 
-const seatMat = new THREE.MeshStandardMaterial({ color: 0x2b3a55, roughness: 0.6 });
-const legMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2e, roughness: 0.4, metalness: 0.6 });
-const tableMat = new THREE.MeshStandardMaterial({ color: 0x8a6a48, roughness: 0.55 });
-const tableEdgeMat = new THREE.MeshStandardMaterial({ color: 0x5c4632, roughness: 0.45 });
-const wellMat = new THREE.MeshStandardMaterial({ color: 0x3a3a40, roughness: 0.35, metalness: 0.2 });
-const pedestalMat = new THREE.MeshStandardMaterial({ color: 0x3d3d42, roughness: 0.4, metalness: 0.25 });
+const seatMat = new THREE.MeshStandardMaterial({ color: 0x5a6573, roughness: 0.55 });
+const legMat = new THREE.MeshStandardMaterial({ color: 0x4a4e55, roughness: 0.45, metalness: 0.35 });
+const tableMat = new THREE.MeshStandardMaterial({ color: 0xb08962, roughness: 0.5 });
+const tableEdgeMat = new THREE.MeshStandardMaterial({ color: 0x8a6848, roughness: 0.45 });
+const wellMat = new THREE.MeshStandardMaterial({ color: 0x4a4a50, roughness: 0.35, metalness: 0.2 });
+const pedestalMat = new THREE.MeshStandardMaterial({ color: 0x6a6d73, roughness: 0.4, metalness: 0.2 });
 const selectedRingMat = new THREE.MeshBasicMaterial({ color: 0x2f8cff });
 
 /** Seat-pan colors reflecting the actual viewing-analysis result for that seat (§2) — never decorative. */

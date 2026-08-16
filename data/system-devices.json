@@ -1,0 +1,146 @@
+[
+  {
+    "id": "user-laptop-source",
+    "manufacturer": "User-supplied",
+    "model": "Laptop (HDMI + USB-C)",
+    "category": "source",
+    "type": "laptop",
+    "physical": { "width": 0.32, "height": 0.02, "depth": 0.22 },
+    "ports": [
+      { "id": "hdmi-out", "label": "HDMI OUT", "direction": "output", "signalTypes": ["VIDEO", "AUDIO"], "connector": "hdmi", "transport": "hdmi", "required": false },
+      { "id": "usbc-out", "label": "USB-C OUT", "direction": "output", "signalTypes": ["VIDEO", "USB"], "connector": "usbc", "transport": "usb-c", "required": false }
+    ],
+    "provenance": "user_defined",
+    "source": "Placeholder source device for system topology. Replace with a real laptop/codec SKU before sign-off. Ports are declared, not measured."
+  },
+  {
+    "id": "user-hdmi-switcher-2x1",
+    "manufacturer": "User-supplied",
+    "model": "HDMI switcher 2×1",
+    "category": "switcher",
+    "type": "hdmi_switcher",
+    "physical": { "width": 0.22, "height": 0.04, "depth": 0.12 },
+    "signalForwarding": ["VIDEO", "AUDIO"],
+    "ports": [
+      { "id": "hdmi-in-1", "label": "HDMI IN 1", "direction": "input", "signalTypes": ["VIDEO", "AUDIO"], "connector": "hdmi", "transport": "hdmi", "required": false },
+      { "id": "hdmi-in-2", "label": "HDMI IN 2", "direction": "input", "signalTypes": ["VIDEO", "AUDIO"], "connector": "hdmi", "transport": "hdmi", "required": false },
+      { "id": "hdmi-out", "label": "HDMI OUT", "direction": "output", "signalTypes": ["VIDEO", "AUDIO"], "connector": "hdmi", "transport": "hdmi", "required": true }
+    ],
+    "provenance": "user_defined",
+    "source": "Placeholder 2×1 HDMI switcher. Matrix size comes from catalog ports, not room size."
+  },
+  {
+    "id": "user-hdmi-extender-tx",
+    "manufacturer": "User-supplied",
+    "model": "HDMI extender TX",
+    "category": "extender",
+    "type": "hdmi_extender_tx",
+    "physical": { "width": 0.12, "height": 0.03, "depth": 0.08 },
+    "signalForwarding": ["VIDEO", "AUDIO"],
+    "ports": [
+      { "id": "hdmi-in", "label": "HDMI IN", "direction": "input", "signalTypes": ["VIDEO", "AUDIO"], "connector": "hdmi", "transport": "hdmi", "required": true },
+      { "id": "cat-out", "label": "CAT OUT", "direction": "output", "signalTypes": ["VIDEO", "AUDIO"], "connector": "rj45", "transport": "hdmi-over-cat", "required": true }
+    ],
+    "provenance": "user_defined",
+    "source": "Placeholder extender TX. Logical signal remains VIDEO; TX–RX physical medium is Cat6, not HDMI cable."
+  },
+  {
+    "id": "user-hdmi-extender-rx",
+    "manufacturer": "User-supplied",
+    "model": "HDMI extender RX",
+    "category": "extender",
+    "type": "hdmi_extender_rx",
+    "physical": { "width": 0.12, "height": 0.03, "depth": 0.08 },
+    "signalForwarding": ["VIDEO", "AUDIO"],
+    "ports": [
+      { "id": "cat-in", "label": "CAT IN", "direction": "input", "signalTypes": ["VIDEO", "AUDIO"], "connector": "rj45", "transport": "hdmi-over-cat", "required": true },
+      { "id": "hdmi-out", "label": "HDMI OUT", "direction": "output", "signalTypes": ["VIDEO", "AUDIO"], "connector": "hdmi", "transport": "hdmi", "required": true }
+    ],
+    "provenance": "user_defined",
+    "source": "Placeholder extender RX. Pair with TX over Cat6."
+  },
+  {
+    "id": "user-dsp-4ch",
+    "manufacturer": "User-supplied",
+    "model": "DSP 4×4 analog + USB + network",
+    "category": "dsp",
+    "type": "dsp",
+    "physical": { "width": 0.48, "height": 0.044, "depth": 0.25 },
+    "signalForwarding": ["AUDIO"],
+    "ports": [
+      { "id": "line-in-1", "label": "LINE IN 1", "direction": "input", "signalTypes": ["AUDIO"], "connector": "line-trs", "transport": "analog-line", "required": false },
+      { "id": "line-in-2", "label": "LINE IN 2", "direction": "input", "signalTypes": ["AUDIO"], "connector": "line-trs", "transport": "analog-line", "required": false },
+      { "id": "usb-audio", "label": "USB AUDIO", "direction": "bidirectional", "signalTypes": ["AUDIO", "USB"], "connector": "usb-a", "transport": "usb", "required": false },
+      { "id": "line-out-1", "label": "LINE OUT 1", "direction": "output", "signalTypes": ["AUDIO"], "connector": "line-trs", "transport": "analog-line", "required": false },
+      { "id": "line-out-2", "label": "LINE OUT 2", "direction": "output", "signalTypes": ["AUDIO"], "connector": "line-trs", "transport": "analog-line", "required": false },
+      { "id": "net-1", "label": "NETWORK", "direction": "bidirectional", "signalTypes": ["NETWORK", "CONTROL", "AUDIO"], "connector": "rj45", "transport": "ethernet", "required": false }
+    ],
+    "provenance": "user_defined",
+    "source": "Placeholder DSP. Analog/USB/network ports as declared. No invented DSP processing, AES67, or Dante unless added to catalog."
+  },
+  {
+    "id": "user-amp-2ch",
+    "manufacturer": "User-supplied",
+    "model": "2-channel amplifier",
+    "category": "amplifier",
+    "type": "amplifier",
+    "physical": { "width": 0.48, "height": 0.044, "depth": 0.3 },
+    "signalForwarding": ["AUDIO"],
+    "ports": [
+      { "id": "line-in-1", "label": "LINE IN 1", "direction": "input", "signalTypes": ["AUDIO"], "connector": "line-trs", "transport": "analog-line", "required": true },
+      { "id": "spk-out-1", "label": "SPEAKER OUT 1", "direction": "output", "signalTypes": ["AUDIO"], "connector": "phoenix", "transport": "analog-speaker", "required": true },
+      { "id": "spk-out-2", "label": "SPEAKER OUT 2", "direction": "output", "signalTypes": ["AUDIO"], "connector": "phoenix", "transport": "analog-speaker", "required": false }
+    ],
+    "provenance": "user_defined",
+    "source": "Placeholder amplifier. Load/wattage not specified — do not invent power matching."
+  },
+  {
+    "id": "user-active-ceiling-speaker",
+    "manufacturer": "User-supplied",
+    "model": "Active ceiling loudspeaker (placeholder)",
+    "category": "speaker",
+    "type": "ceiling_speaker",
+    "physical": { "width": 0.2, "height": 0.12, "depth": 0.2 },
+    "speaker": {
+      "mount": "ceiling",
+      "dispersionDeg": 100,
+      "maxSplAt1m": 108,
+      "powerClass": "active"
+    },
+    "ports": [
+      { "id": "line-in", "label": "LINE IN", "direction": "input", "signalTypes": ["AUDIO"], "connector": "line-trs", "transport": "analog-line", "required": true }
+    ],
+    "provenance": "user_defined",
+    "source": "Placeholder active speaker. Coverage numbers are user-defined for spatial engine tests of powerClass, not a manufacturer SKU."
+  },
+  {
+    "id": "user-net-switch-8",
+    "manufacturer": "User-supplied",
+    "model": "8-port network switch",
+    "category": "network",
+    "type": "ethernet_switch",
+    "physical": { "width": 0.2, "height": 0.04, "depth": 0.12 },
+    "signalForwarding": ["NETWORK", "CONTROL"],
+    "ports": [
+      { "id": "p1", "label": "PORT 1", "direction": "bidirectional", "signalTypes": ["NETWORK", "CONTROL"], "connector": "rj45", "transport": "ethernet", "required": false },
+      { "id": "p2", "label": "PORT 2", "direction": "bidirectional", "signalTypes": ["NETWORK", "CONTROL"], "connector": "rj45", "transport": "ethernet", "required": false },
+      { "id": "p3", "label": "PORT 3", "direction": "bidirectional", "signalTypes": ["NETWORK", "CONTROL"], "connector": "rj45", "transport": "ethernet", "required": false },
+      { "id": "p4", "label": "PORT 4", "direction": "bidirectional", "signalTypes": ["NETWORK", "CONTROL"], "connector": "rj45", "transport": "ethernet", "required": false }
+    ],
+    "provenance": "user_defined",
+    "source": "Placeholder Ethernet switch. Ports are network/control unless a catalog device declares AV-over-IP."
+  },
+  {
+    "id": "user-touch-controller",
+    "manufacturer": "User-supplied",
+    "model": "Touch controller",
+    "category": "control",
+    "type": "touch_panel",
+    "physical": { "width": 0.2, "height": 0.12, "depth": 0.02 },
+    "ports": [
+      { "id": "net-1", "label": "NETWORK / CONTROL", "direction": "bidirectional", "signalTypes": ["NETWORK", "CONTROL"], "connector": "rj45", "transport": "ethernet", "required": true }
+    ],
+    "provenance": "user_defined",
+    "source": "Placeholder control surface. No invented IR/serial/GPIO unless added to catalog."
+  }
+]

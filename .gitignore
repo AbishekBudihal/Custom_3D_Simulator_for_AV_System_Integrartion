@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.DS_Store
+Thumbs.db
+*.local
+.vscode/
+.idea/
+coverage/
+.vite/
+tsconfig.tsbuildinfo

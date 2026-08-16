@@ -1,0 +1,46 @@
+[
+  {
+    "id": "qsc-adc6t",
+    "manufacturer": "QSC",
+    "model": "AcousticDesign AD-C6T",
+    "category": "speaker",
+    "type": "ceiling_speaker",
+    "physical": { "width": 0.20, "height": 0.12, "depth": 0.20 },
+    "speaker": { "mount": "ceiling", "dispersionDeg": 130, "maxSplAt1m": 113, "sensitivityDb": 89, "frequencyResponse": "75Hz-20kHz", "powerRating": "75W @ 70/100V or 8ohm", "powerClass": "passive" },
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for this model line; verify against QSC's current datasheet."
+  },
+  {
+    "id": "bose-em90",
+    "manufacturer": "Bose Professional",
+    "model": "EdgeMax EM90",
+    "category": "speaker",
+    "type": "ceiling_speaker",
+    "physical": { "width": 0.24, "height": 0.07, "depth": 0.24 },
+    "speaker": { "mount": "ceiling", "dispersionDeg": 90, "maxSplAt1m": 116, "sensitivityDb": 90, "frequencyResponse": "65Hz-20kHz", "powerRating": "60W @ 70/100V or 8ohm", "powerClass": "passive" },
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for this model line; verify against Bose Professional's current datasheet."
+  },
+  {
+    "id": "jbl-control24c",
+    "manufacturer": "JBL Professional",
+    "model": "Control 24C",
+    "category": "speaker",
+    "type": "ceiling_speaker",
+    "physical": { "width": 0.28, "height": 0.13, "depth": 0.28 },
+    "speaker": { "mount": "ceiling", "dispersionDeg": 100, "maxSplAt1m": 112, "sensitivityDb": 88, "frequencyResponse": "80Hz-20kHz", "powerRating": "75W @ 70/100V or 8ohm", "powerClass": "passive" },
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for this model line; verify against JBL Professional's current datasheet."
+  },
+  {
+    "id": "qsc-ads52t",
+    "manufacturer": "QSC",
+    "model": "AcousticDesign AD-S52T",
+    "category": "speaker",
+    "type": "surface_speaker",
+    "physical": { "width": 0.20, "height": 0.32, "depth": 0.18 },
+    "speaker": { "mount": "wall", "dispersionDeg": 90, "maxSplAt1m": 115, "sensitivityDb": 89, "frequencyResponse": "65Hz-20kHz", "powerRating": "75W @ 70/100V or 8ohm", "powerClass": "passive" },
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for this model line; verify against QSC's current datasheet."
+  }
+]

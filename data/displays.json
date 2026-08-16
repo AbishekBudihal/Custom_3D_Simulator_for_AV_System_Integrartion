@@ -1,0 +1,54 @@
+[
+  {
+    "id": "lg-86uh5j",
+    "manufacturer": "LG",
+    "model": "86UH5J-H",
+    "category": "display",
+    "type": "professional_display",
+    "physical": { "width": 1.936, "height": 1.116, "depth": 0.083, "weightKg": 52.6 },
+    "display": { "diagonalInches": 86, "resolution": "3840x2160", "aspectRatio": "16:9", "brightnessNits": 500 },
+    "mounting": { "wall": true, "floor": false, "vesa": "800x400" },
+    "connectivity": { "hdmi": 3, "displayPort": 0, "usb": 2, "ethernet": true },
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for this model line; verify exact revision against LG's current datasheet before procurement."
+  },
+  {
+    "id": "samsung-qm85r",
+    "manufacturer": "Samsung",
+    "model": "QM85R",
+    "category": "display",
+    "type": "professional_display",
+    "physical": { "width": 1.898, "height": 1.096, "depth": 0.081, "weightKg": 55.0 },
+    "display": { "diagonalInches": 85, "resolution": "3840x2160", "aspectRatio": "16:9", "brightnessNits": 500 },
+    "mounting": { "wall": true, "floor": false, "vesa": "800x400" },
+    "connectivity": { "hdmi": 3, "displayPort": 1, "usb": 2, "ethernet": true },
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for this model line; verify exact revision against Samsung's current datasheet before procurement."
+  },
+  {
+    "id": "generic-55-pro",
+    "manufacturer": "Generic",
+    "model": "PRO-55",
+    "category": "display",
+    "type": "professional_display",
+    "physical": { "width": 1.24, "height": 0.72, "depth": 0.06, "weightKg": 18 },
+    "display": { "diagonalInches": 55, "resolution": "3840x2160", "aspectRatio": "16:9", "brightnessNits": 400 },
+    "mounting": { "wall": true, "floor": false, "vesa": "400x400" },
+    "connectivity": { "hdmi": 2, "usb": 1, "ethernet": true },
+    "provenance": "user_defined",
+    "source": "Placeholder — replace with an actual product before final design."
+  },
+  {
+    "id": "generic-98-pro",
+    "manufacturer": "Generic",
+    "model": "PRO-98",
+    "category": "display",
+    "type": "professional_display",
+    "physical": { "width": 2.2, "height": 1.26, "depth": 0.09, "weightKg": 74 },
+    "display": { "diagonalInches": 98, "resolution": "3840x2160", "aspectRatio": "16:9", "brightnessNits": 500 },
+    "mounting": { "wall": true, "floor": false, "vesa": "800x600" },
+    "connectivity": { "hdmi": 3, "usb": 2, "ethernet": true },
+    "provenance": "user_defined",
+    "source": "Placeholder — replace with an actual product before final design."
+  }
+]

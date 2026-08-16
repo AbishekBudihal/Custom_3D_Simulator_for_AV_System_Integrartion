@@ -1,0 +1,54 @@
+[
+  {
+    "id": "shure-mxa920",
+    "manufacturer": "Shure",
+    "model": "MXA920",
+    "category": "microphone",
+    "type": "ceiling_array",
+    "physical": { "width": 0.60, "height": 0.04, "depth": 0.60 },
+    "microphone": { "mount": "ceiling", "pickupRadiusM": 4.6, "pattern": "Steerable coverage (automatic lobe tracking)", "channels": 8, "connection": "Dante / Cat6 (PoE)" },
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for this model line; verify against Shure's current datasheet."
+  },
+  {
+    "id": "sennheiser-tcc2",
+    "manufacturer": "Sennheiser",
+    "model": "TeamConnect Ceiling 2",
+    "category": "microphone",
+    "type": "ceiling_array",
+    "physical": { "width": 0.35, "height": 0.04, "depth": 0.35 },
+    "microphone": { "mount": "ceiling", "pickupRadiusM": 5.5, "pattern": "Automatic beamforming array", "channels": 1, "connection": "Dante / Cat6 (PoE)" },
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for this model line; verify against Sennheiser's current datasheet."
+  },
+  {
+    "id": "shure-mxa310",
+    "manufacturer": "Shure",
+    "model": "MXA310",
+    "category": "microphone",
+    "type": "table_array",
+    "physical": { "width": 0.22, "height": 0.03, "depth": 0.22 },
+    "microphone": { "mount": "table", "pickupRadiusM": 3.05, "pattern": "4x toroid + omni (steerable)", "channels": 5, "connection": "Dante / Cat6 (PoE)" },
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for this model line; verify against Shure's current datasheet."
+  },
+  {
+    "id": "placeholder-directional-sector",
+    "manufacturer": "User-supplied",
+    "model": "Horizontal sector (placeholder)",
+    "category": "microphone",
+    "type": "gooseneck",
+    "physical": { "width": 0.04, "height": 0.45, "depth": 0.04 },
+    "microphone": {
+      "mount": "table",
+      "pickupRadiusM": 1.2,
+      "beamWidthDeg": 90,
+      "coverageModel": "directional_sector",
+      "pattern": "Horizontal sector from catalog beamWidthDeg; facing from placement rotation. Not a polar plot.",
+      "channels": 1,
+      "connection": "XLR"
+    },
+    "provenance": "user_defined",
+    "source": "Placeholder parameters for directional-sector evaluation. Replace with datasheet beam width and radius before engineering sign-off. Not a manufacturer SKU."
+  }
+]

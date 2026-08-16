@@ -1,0 +1,33 @@
+[
+  {
+    "id": "yealink-uvc84",
+    "manufacturer": "Yealink",
+    "model": "UVC84",
+    "category": "camera",
+    "type": "ptz_camera",
+    "physical": { "width": 0.132, "height": 0.145, "depth": 0.138 },
+    "camera": {
+      "mount": "wall",
+      "horizontalFovDeg": 81.9,
+      "verticalFovDeg": 52.2
+    },
+    "mounting": { "wall": true, "floor": false, "ceiling": false },
+    "provenance": "estimated",
+    "source": "Yealink publicly listed D/H/V FOV 90° / 81.9° / 52.2° for UVC84. Horizontal and vertical FOV used as published; diagonal is not treated as horizontal. Verify against the current Yealink datasheet before sign-off."
+  },
+  {
+    "id": "user-horizontal-frustum",
+    "manufacturer": "User-supplied",
+    "model": "Horizontal frustum (placeholder)",
+    "category": "camera",
+    "type": "wall_camera",
+    "physical": { "width": 0.12, "height": 0.08, "depth": 0.08 },
+    "camera": {
+      "mount": "wall",
+      "horizontalFovDeg": 72.5
+    },
+    "mounting": { "wall": true, "floor": false, "ceiling": false },
+    "provenance": "user_defined",
+    "source": "User-defined horizontal FOV only. Vertical FOV is not supplied and is not invented. Replace with datasheet HFOV (and VFOV if needed) before engineering sign-off. Not a manufacturer SKU."
+  }
+]

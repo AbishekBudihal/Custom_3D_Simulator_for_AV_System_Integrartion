@@ -34,6 +34,7 @@ import { addSpeakerCoverageVolume } from './CoverageVolumeOverlay';
 import { addCableRouteOverlays } from './CableRouteOverlay';
 import { cachedCableRoute } from '../system/CableRouter';
 import { cableRouteContext } from '../system/cableContext';
+import { isCableSelected, shouldDrawConnection, shouldShowCableRoutes } from '../system/cableVisibility';
 import { snapEquipment } from '../interaction/SnapEngine';
 import { evaluatePlacement } from '../av/PlacementFeedback';
 import {
@@ -266,7 +267,9 @@ export class SceneManager {
       this.state.selectedConnectionId +
       this.state.showCableRoutes +
       this.state.systemPhysicalView +
-      this.state.workspaceMode +
+      JSON.stringify(this.state.highlightedConnectionIds) +
+      this.state.selection.kind +
+      this.state.selection.id +
       JSON.stringify(this.state.equipment) +
       JSON.stringify(this.state.tables) +
       JSON.stringify(this.state.racks) +
@@ -452,16 +455,13 @@ export class SceneManager {
       if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
       else if (mat) mat.dispose();
     }
-    const show =
-      this.state.showCableRoutes ||
-      !!this.state.selectedConnectionId ||
-      (this.state.workspaceMode === 'system' && this.state.systemPhysicalView);
+    const show = shouldShowCableRoutes(this.state);
     if (!show || !this.state.connections.length) return;
     const ctx = cableRouteContext(this.state, catalog);
-    const items = this.state.connections.map((c) => ({
+    const items = this.state.connections.filter((c) => shouldDrawConnection(this.state, c)).map((c) => ({
       route: cachedCableRoute(c, ctx),
       signalType: c.signalType,
-      selected: this.state.selectedConnectionId === c.id || this.state.highlightedConnectionIds.includes(c.id)
+      selected: isCableSelected(this.state, c)
     }));
     addCableRouteOverlays(this.cableGroup, items, this.state.showCableRoutes || this.state.systemPhysicalView);
   }

@@ -8,6 +8,7 @@ import { getActiveDisplay, projectObstacles, summarizeDesignHealth } from '../..
 import { summarizeCameraCoverage } from '../../av/CameraAnalysis';
 import { resolveProjectSpeakers, usableSpeakerPlacements } from '../../av/SpeakerAnalysis';
 import { evaluateRoomAudioCoverage, DEFAULT_EAR_HEIGHT_M } from '../../av/SpeakerCoverageEngine';
+import { systemCompletenessFromFindings } from '../../system/ConnectionStatus';
 
 const catalog = loadDefaultCatalog();
 
@@ -144,6 +145,24 @@ export function renderDesignAssistant(host: HTMLElement, state: AppState): void 
       if (state.racks[0]) state.select('rack', state.racks[0].id);
     };
     el.appendChild(rackRow);
+  }
+
+  const sysItems = systemCompletenessFromFindings(report.findings, state.equipment, catalog);
+  if (sysItems.length) {
+    const sysTitle = document.createElement('div');
+    sysTitle.className = 'nav-section-title';
+    sysTitle.textContent = 'SYSTEM COMPLETENESS';
+    el.appendChild(sysTitle);
+    sysItems.forEach((item) => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'ad-asst-row';
+      row.style.cssText = viewRow.style.cssText;
+      const mark = item.mark === 'ok' ? '✓' : item.mark === 'err' ? '✕' : item.mark === 'warn' ? '⚠' : '○';
+      row.textContent = `${mark} ${item.label}`;
+      row.onclick = () => state.setWorkspaceMode('system');
+      el.appendChild(row);
+    });
   }
 
   const attn = document.createElement('div');

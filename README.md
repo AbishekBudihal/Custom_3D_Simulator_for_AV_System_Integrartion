@@ -37,6 +37,22 @@ npm run test
 npm run build
 ```
 
+## Web
+
+The application can be deployed as a static Vite application.
+
+Build:
+
+```bash
+npm run build
+```
+
+Production output:
+
+`dist/`
+
+No backend or environment variables are required. Vercel: build command `npm run build`, output directory `dist`.
+
 ## Status
 
 Active development. Geometric coverage and cable routes are estimates, not

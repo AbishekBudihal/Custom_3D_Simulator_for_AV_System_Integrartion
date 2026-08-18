@@ -9,8 +9,11 @@ import type { ProjectValidationContext } from './ValidationContext';
 import type { ValidationCheck, ValidationFinding } from './ValidationTypes';
 import { SYSTEM_ROLE_CATEGORIES } from '../../system/SystemTypes';
 import { resolveInstancePorts, resolveProductPorts } from '../../system/PortResolver';
-import { canConnectPorts, occupancyConflict } from '../../system/PortCompatibility';
+import { canConnectPorts, canConnectWithCable, maxConnectionsFor, occupancyConflict } from '../../system/PortCompatibility';
+import { portConnectionRole } from '../../system/ConnectionStatus';
 import { enumerateSignalPaths } from '../../system/SignalPathEngine';
+import { cachedCableRoute, type CableRouteContext } from '../../system/CableRouter';
+import { cableTypeOf } from '../../system/CableBoq';
 
 function finding(
   partial: Omit<ValidationFinding, 'affectedObjects' | 'recommendedActions' | 'potentialVariables'> & {
@@ -52,7 +55,7 @@ export const checkSignalDirection: ValidationCheck = {
       if (!r.ok) {
         out.push(
           finding({
-            id: `SIGNAL-002-${c.id}`,
+            id: `${r.code}-${c.id}`,
             code: r.code,
             severity: 'error',
             category: 'system',
@@ -81,12 +84,23 @@ export const checkOccupiedPorts: ValidationCheck = {
     const out: ValidationFinding[] = [];
     ctx.connections.forEach((c, i) => {
       const others = ctx.connections.filter((_, j) => j !== i);
-      const conflict = occupancyConflict(others, c.fromInstanceId, c.fromPortId, c.toInstanceId, c.toPortId);
+      const fromEq = ctx.equipment.find((e) => e.instanceId === c.fromInstanceId);
+      const toEq = ctx.equipment.find((e) => e.instanceId === c.toInstanceId);
+      const from = fromEq
+        ? resolveInstancePorts(fromEq.instanceId, fromEq.productId, ctx.catalog).find((p) => p.id === c.fromPortId)
+        : undefined;
+      const to = toEq
+        ? resolveInstancePorts(toEq.instanceId, toEq.productId, ctx.catalog).find((p) => p.id === c.toPortId)
+        : undefined;
+      const conflict = occupancyConflict(others, c.fromInstanceId, c.fromPortId, c.toInstanceId, c.toPortId, {
+        fromMax: from ? maxConnectionsFor(from) : 1,
+        toMax: to ? maxConnectionsFor(to) : 1
+      });
       if (conflict) {
         out.push(
           finding({
-            id: `SIGNAL-006-${c.id}`,
-            code: 'SIGNAL-006',
+            id: `CONN-004-${c.id}`,
+            code: 'CONN-004',
             severity: 'error',
             category: 'system',
             title: 'Port already occupied',
@@ -113,7 +127,8 @@ export const checkRequiredPorts: ValidationCheck = {
     for (const inst of ctx.equipment) {
       const ports = resolveInstancePorts(inst.instanceId, inst.productId, ctx.catalog);
       for (const p of ports) {
-        if (!p.required) continue;
+        const role = portConnectionRole(p);
+        if (role === 'optional') continue;
         const used = ctx.connections.some(
           (c) =>
             (c.fromInstanceId === inst.instanceId && c.fromPortId === p.id) ||
@@ -122,12 +137,12 @@ export const checkRequiredPorts: ValidationCheck = {
         if (!used) {
           out.push(
             finding({
-              id: `SIGNAL-007-${inst.instanceId}-${p.id}`,
-              code: 'SIGNAL-007',
-              severity: 'warning',
+              id: `CONN-006-${inst.instanceId}-${p.id}`,
+              code: 'CONN-006',
+              severity: role === 'recommended' ? 'info' : 'warning',
               category: 'system',
-              title: 'Required port unconnected',
-              message: `${inst.name}: ${p.label} is catalog-required and has no connection.`,
+              title: role === 'recommended' ? 'Recommended port unconnected' : 'Required port unconnected',
+              message: `${inst.name}: ${p.label} is catalog-${role} and has no connection.`,
               explanation: 'Required is a catalog flag, not an invented room rule.',
               objectId: inst.instanceId,
               affectedObjects: [{ kind: 'equipment', id: inst.instanceId, label: inst.name }],
@@ -368,6 +383,130 @@ export const checkAmpSpeakerOut: ValidationCheck = {
   }
 };
 
+function routeCtx(ctx: ProjectValidationContext): CableRouteContext {
+  return {
+    room: ctx.room,
+    equipment: ctx.equipment,
+    tables: ctx.tables,
+    seats: ctx.seats,
+    racks: ctx.racks,
+    portOf: (instanceId, portId) => {
+      const inst = ctx.equipment.find((e) => e.instanceId === instanceId);
+      if (!inst) return undefined;
+      return resolveInstancePorts(inst.instanceId, inst.productId, ctx.catalog).find((p) => p.id === portId);
+    }
+  };
+}
+
+export const checkConnMissingEndpoint: ValidationCheck = {
+  code: 'CONN-005',
+  category: 'system',
+  title: 'Connection endpoint missing',
+  evaluate(ctx): ValidationFinding[] {
+    const out: ValidationFinding[] = [];
+    for (const c of ctx.connections) {
+      const fromEq = ctx.equipment.find((e) => e.instanceId === c.fromInstanceId);
+      const toEq = ctx.equipment.find((e) => e.instanceId === c.toInstanceId);
+      const from = fromEq
+        ? resolveInstancePorts(fromEq.instanceId, fromEq.productId, ctx.catalog).find((p) => p.id === c.fromPortId)
+        : undefined;
+      const to = toEq
+        ? resolveInstancePorts(toEq.instanceId, toEq.productId, ctx.catalog).find((p) => p.id === c.toPortId)
+        : undefined;
+      if (fromEq && toEq && from && to) continue;
+      out.push(
+        finding({
+          id: `CONN-005-${c.id}`,
+          code: 'CONN-005',
+          severity: 'error',
+          category: 'system',
+          title: 'Connection references missing device/port',
+          message: `${c.fromInstanceId}.${c.fromPortId} → ${c.toInstanceId}.${c.toPortId} is incomplete.`,
+          explanation: 'The connection graph must name devices and catalog ports that exist in the project.',
+          objectId: c.fromInstanceId,
+          source: 'SystemConnection'
+        })
+      );
+    }
+    return out;
+  }
+};
+
+export const checkConnCableType: ValidationCheck = {
+  code: 'CONN-007',
+  category: 'system',
+  title: 'Cable type',
+  evaluate(ctx): ValidationFinding[] {
+    const out: ValidationFinding[] = [];
+    for (const c of ctx.connections) {
+      const fromEq = ctx.equipment.find((e) => e.instanceId === c.fromInstanceId);
+      const toEq = ctx.equipment.find((e) => e.instanceId === c.toInstanceId);
+      if (!fromEq || !toEq) continue;
+      const from = resolveInstancePorts(fromEq.instanceId, fromEq.productId, ctx.catalog).find((p) => p.id === c.fromPortId);
+      const to = resolveInstancePorts(toEq.instanceId, toEq.productId, ctx.catalog).find((p) => p.id === c.toPortId);
+      if (!from || !to) continue;
+      const r = canConnectWithCable(from, to, cableTypeOf(c));
+      if (!r.ok && r.code === 'CONN-007') {
+        out.push(
+          finding({
+            id: `CONN-007-${c.id}`,
+            code: 'CONN-007',
+            severity: 'error',
+            category: 'system',
+            title: 'Invalid cable type',
+            message: r.reason,
+            explanation: 'Cable type is independent of connector name. HDMI-over-Cat uses Cat cable on the extender hop.',
+            objectId: fromEq.instanceId,
+            affectedObjects: [
+              { kind: 'equipment', id: fromEq.instanceId, label: fromEq.name },
+              { kind: 'equipment', id: toEq.instanceId, label: toEq.name }
+            ],
+            source: 'PortCompatibility.canConnectWithCable'
+          })
+        );
+      }
+    }
+    return out;
+  }
+};
+
+export const checkConnRouteUnavailable: ValidationCheck = {
+  code: 'CONN-008',
+  category: 'system',
+  title: 'Cable route',
+  evaluate(ctx): ValidationFinding[] {
+    if (!ctx.connections.length) return [];
+    const rctx = routeCtx(ctx);
+    const out: ValidationFinding[] = [];
+    for (const c of ctx.connections) {
+      const fromEq = ctx.equipment.find((e) => e.instanceId === c.fromInstanceId);
+      const toEq = ctx.equipment.find((e) => e.instanceId === c.toInstanceId);
+      if (!fromEq || !toEq) continue;
+      const route = cachedCableRoute(c, rctx);
+      if (route.status !== 'no-room' && route.segments.length > 0) continue;
+      if (ctx.room && route.segments.length > 0) continue;
+      out.push(
+        finding({
+          id: `CONN-008-${c.id}`,
+          code: 'CONN-008',
+          severity: 'warning',
+          category: 'system',
+          title: 'Cable route unavailable',
+          message: `${fromEq.name} → ${toEq.name}: route length is an estimate only when room geometry exists.`,
+          explanation: 'Routing is a geometric estimate, not BIM tray design. Length uses the polyline when a room is present.',
+          objectId: fromEq.instanceId,
+          affectedObjects: [
+            { kind: 'equipment', id: fromEq.instanceId, label: fromEq.name },
+            { kind: 'equipment', id: toEq.instanceId, label: toEq.name }
+          ],
+          source: 'CableRouter'
+        })
+      );
+    }
+    return out;
+  }
+};
+
 export const SYSTEM_CHECKS: ValidationCheck[] = [
   checkPortsIncomplete,
   checkSignalDirection,
@@ -377,5 +516,8 @@ export const SYSTEM_CHECKS: ValidationCheck[] = [
   checkSourceDestination,
   checkDestinationSource,
   checkPassiveSpeakerPath,
-  checkAmpSpeakerOut
+  checkAmpSpeakerOut,
+  checkConnMissingEndpoint,
+  checkConnCableType,
+  checkConnRouteUnavailable
 ];

@@ -13,6 +13,7 @@ import { placeAvRack } from '../av/RackPlacement';
 import { splitDivisibleZones } from '../room/RoomZones';
 import { snapCeilingMounted, displayOverlapsOpening } from '../interaction/SnapEngine';
 import { getPresentationWall, wallMountPoint, computeWallCandidates, presentationRotation, type WallKey } from '../room/RoomGeometry';
+import { selectPresentationWall } from '../av/placement/PlacementCandidateEngine';
 import {
   suggestDisplayPlacement,
   suggestMicDesign,
@@ -75,14 +76,16 @@ function resolveRoom(ctx: ProjectDesignContext, req: DesignRequirements): RoomMo
   base.height = req.room.height!;
   base.useCase = req.useCase;
   if (req.constraints.presentationWall) base.presentationWall = req.constraints.presentationWall;
-  else if (!base.presentationWall) {
-    base.presentationWall = base.depth >= base.width ? 'front' : 'left';
-  }
+  else delete base.presentationWall;
   if (req.room.divisible) {
     base.divisible = true;
     base.zones = splitDivisibleZones(base);
   }
-  return clampOpenings(base);
+  const clamped = clampOpenings(base);
+  if (!req.constraints.presentationWall) {
+    clamped.presentationWall = selectPresentationWall(clamped);
+  }
+  return clamped;
 }
 
 function resolveSeating(
@@ -133,9 +136,11 @@ function placeDisplays(
   product: EquipmentProduct,
   count: number,
   forbidden: WallKey | undefined,
-  id: (p: string) => string
+  id: (p: string) => string,
+  seats: Seat[] = [],
+  tables: TableSpec[] = []
 ): { instances: EquipmentInstance[]; note: string } {
-  let suggestion = suggestDisplayPlacement(room, product);
+  let suggestion = suggestDisplayPlacement(room, product, { seats, tables });
   if (forbidden && suggestion.wall === forbidden) {
     const alt = suggestion.candidates.find((c) => c.wall !== forbidden && c.valid);
     if (alt) {
@@ -228,7 +233,7 @@ function evaluateDisplayProduct(
   forbidden: WallKey | undefined,
   id: (p: string) => string
 ): { pick: ProductPick; instances: EquipmentInstance[]; pass: number; fail: number; warn: number } {
-  const placed = placeDisplays(room, product, count, forbidden, id);
+  const placed = placeDisplays(room, product, count, forbidden, id, seats, tables);
   const obstacles = projectObstacles(room, tables);
   const inst = placed.instances[0];
   const analyses = analyzeAllSeatsAgainstDisplay(
@@ -370,10 +375,11 @@ function placeCamera(
   room: RoomModel,
   seats: Seat[],
   tables: TableSpec[],
-  id: (p: string) => string
+  id: (p: string) => string,
+  displayWall?: WallKey
 ): { instances: EquipmentInstance[]; pick: ProductPick } {
   const y = 1.6;
-  const wall = getPresentationWall(room);
+  const wall = displayWall ?? getPresentationWall(room);
   const mounted = centerDisplayOnWall(room, product, wall);
   const inst: EquipmentInstance = {
     instanceId: id('cam'),
@@ -568,7 +574,7 @@ export function generateDesign(
     id: 'wall',
     title: 'Determine presentation wall',
     status: 'done',
-    detail: `${wall} (existing wall-candidate / presentation-wall logic)`
+    detail: `${wall} — scored from seating, doors/windows, circulation, and viewing throw (not first empty wall)`
   });
 
   const forbidden: WallKey | undefined = r.constraints.noRearWallEquipment ? 'back' : undefined;
@@ -738,7 +744,15 @@ export function generateDesign(
     if (skip(existing.camera) || (keepEq && existingCam.length && r.completeMissingOnly)) {
       equipment.push(...existingCam);
     } else if (r.camera.required !== 'not_required' && camEvals[camIdx]) {
-      const ev = placeCamera(catalog.get(camEvals[camIdx].pick.productId)!, room, seating.seats, seating.tables, localId);
+      const dispWall = equipment.find((e) => catalog.get(e.productId)?.category === 'display')?.wall;
+      const ev = placeCamera(
+        catalog.get(camEvals[camIdx].pick.productId)!,
+        room,
+        seating.seats,
+        seating.tables,
+        localId,
+        dispWall
+      );
       equipment.push(...ev.instances);
       picks.camera = attachAlts(
         camEvals.map((c) => c.pick),

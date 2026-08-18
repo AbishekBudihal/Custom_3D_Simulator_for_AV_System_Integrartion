@@ -4,11 +4,19 @@
 
 import { seatsAroundConferenceTable } from './ConferenceLayout';
 import type { TableSpec } from './SeatingGenerator';
+export {
+  applyPresetToTable,
+  practicalSeatCapacity,
+  relayoutSeatsForTable,
+  translateSeatsForTable,
+  matchTablePreset,
+  clampTableSpecSizes
+} from './ParametricTable';
 
 export { seatsAroundConferenceTable };
 
 export function rotateTableSpec90(table: TableSpec): TableSpec {
-  return { ...table, sizeX: table.sizeZ, sizeZ: table.sizeX };
+  return { ...table, sizeX: table.sizeZ, sizeZ: table.sizeX, presetId: 'custom' };
 }
 
 export function conferenceClearanceM(room: { width: number; depth: number }, table: TableSpec): number {

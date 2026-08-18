@@ -15,7 +15,8 @@ const PREFIX_LAYER: Record<string, AnalysisLayer> = {
   CAM: 'camera',
   SIGNAL: 'system',
   SYSTEM: 'system',
-  CABLE: 'system'
+  CABLE: 'system',
+  CONN: 'system'
 };
 
 export function overlayLayerForFinding(code: string): AnalysisLayer {

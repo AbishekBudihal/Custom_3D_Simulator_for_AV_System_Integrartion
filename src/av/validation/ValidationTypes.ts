@@ -5,7 +5,7 @@
  */
 
 export type FindingSeverity = 'pass' | 'info' | 'warning' | 'error';
-export type FindingCategory = 'viewing' | 'display' | 'seating' | 'furniture' | 'audio' | 'microphone' | 'camera' | 'system' | 'rack';
+export type FindingCategory = 'viewing' | 'display' | 'seating' | 'furniture' | 'audio' | 'microphone' | 'camera' | 'system' | 'rack' | 'equipment';
 export type FindingPriority = 'high' | 'medium' | 'low';
 
 export interface FindingMetric {

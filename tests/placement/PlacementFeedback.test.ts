@@ -30,4 +30,13 @@ describe('Placement feedback and mounting', () => {
     expect(note.status).toBe('warning');
     expect(note.note.toLowerCase()).toMatch(/outside/);
   });
+
+  it('manual display placement reports door clearance without blocking the designer', () => {
+    const room = createDefaultRoom('conference');
+    const display = catalog.get('lg-86uh5j')!;
+    const position = { x: 3.6 + 0.5 - room.width / 2, y: 1.6, z: -room.depth / 2 + room.wallThickness + 0.03 };
+    const note = evaluatePlacement(room, [], display, position);
+    expect(['invalid', 'warning']).toContain(note.status);
+    expect(note.note.toLowerCase()).toMatch(/door/);
+  });
 });

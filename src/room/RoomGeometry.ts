@@ -230,6 +230,8 @@ export function computeWallCandidates(room: RoomModel, requiredWidthM = 0, requi
     }
 
     let score = usableWidthM * 10 - obstacles.length * 8;
+    if (hasDoor) score -= 28;
+    if (hasWindow) score -= 16;
     if (!valid) score -= 1000;
     score = Number(score.toFixed(1));
 

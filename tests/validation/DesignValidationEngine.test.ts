@@ -62,6 +62,9 @@ describe('DesignValidationEngine', () => {
     expect(codes).toContain('RACK-003');
     expect(codes).toContain('CABLE-001');
     expect(codes).toContain('CABLE-002');
+    expect(codes).toContain('CONN-005');
+    expect(codes).toContain('CONN-007');
+    expect(codes).toContain('CONN-008');
   });
 
   it('emits DISPLAY-001 ERROR when no display is placed', () => {

@@ -25,9 +25,10 @@ import {
   suggestMicDesign,
   centerDisplayOnWall
 } from '../../av/PlacementSuggestionEngine';
-import { snapWallMounted, snapEquipment } from '../../interaction/SnapEngine';
-import { catalogCardLine } from '../../catalog/CatalogPresentation';
-import { getPresentationWall } from '../../room/RoomGeometry';
+import { snapEquipment } from '../../interaction/SnapEngine';
+import { catalogCardLine, m, mountSummary, NOT_SPECIFIED } from '../../catalog/CatalogPresentation';
+import { analysisSupportLine, filterCatalog, productDescription, productFamily } from '../../catalog/CatalogEngineering';
+import { selectPresentationWall } from '../../av/placement/PlacementCandidateEngine';
 import {
   cameraEngineeringReady,
   displayEngineeringReady,
@@ -131,15 +132,10 @@ function renderCatalogBrowser(wrap: HTMLElement, state: AppState): void {
     listTitle.textContent = group.label.toUpperCase();
     listBody.innerHTML = '';
 
-    let products = catalog.byGroup(browserState.groupId);
-
-    if (browserState.search.trim()) {
-      const q = browserState.search.trim().toLowerCase();
-      products = products.filter((p) => `${p.manufacturer} ${p.model} ${p.type}`.toLowerCase().includes(q));
-    }
-    if (browserState.filters.manufacturer) {
-      products = products.filter((p) => p.manufacturer === browserState.filters.manufacturer);
-    }
+    let products = filterCatalog(catalog.byGroup(browserState.groupId), {
+      text: browserState.search,
+      manufacturer: browserState.filters.manufacturer || undefined
+    });
     if (browserState.filters.size) {
       products = products.filter((p) => String(p.display?.diagonalInches) === browserState.filters.size);
     }
@@ -247,8 +243,12 @@ function renderProductCard(p: EquipmentProduct, state: AppState, wrap: HTMLEleme
   model.textContent = p.model;
   const specs = document.createElement('div');
   specs.className = 'specs';
-  specs.textContent = catalogCardLine(p);
+  specs.textContent = `${catalogCardLine(p)} · ${mountSummary(p)}`;
   card.append(mfr, model, specs);
+  const phys = document.createElement('div');
+  phys.className = 'specs';
+  phys.textContent = `${m(p.physical.width)} × ${m(p.physical.height)} × ${m(p.physical.depth)}`;
+  card.appendChild(phys);
 
   const flags = document.createElement('div');
   flags.className = 'equip-card-flags';
@@ -278,6 +278,40 @@ function renderProductCard(p: EquipmentProduct, state: AppState, wrap: HTMLEleme
 
   card.append(viewBtn, addBtn);
   return card;
+}
+
+function renderProductEngineeringSheet(product: EquipmentProduct): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'suggestion-box';
+  const title = document.createElement('div');
+  title.className = 'nav-section-title';
+  title.textContent = product.category.replace(/_/g, ' ').toUpperCase();
+  box.appendChild(title);
+  const rows: [string, string][] = [
+    ['Manufacturer', product.manufacturer],
+    ['Model', product.model],
+    ['Family', productFamily(product)],
+    ['Description', productDescription(product)],
+    ['Width', m(product.physical.width)],
+    ['Height', m(product.physical.height)],
+    ['Depth', m(product.physical.depth)],
+    ['Mounting', mountSummary(product)],
+    ['Analysis', analysisSupportLine(product)]
+  ];
+  if (product.display) {
+    rows.push(
+      ['Diagonal', `${product.display.diagonalInches}"`],
+      ['Resolution', product.display.resolution || NOT_SPECIFIED],
+      ['Aspect', product.display.aspectRatio || NOT_SPECIFIED]
+    );
+  }
+  rows.forEach(([l, v]) => {
+    const row = document.createElement('div');
+    row.className = 'metric-row';
+    row.innerHTML = `<span class="label">${l}</span><span class="value">${v}</span>`;
+    box.appendChild(row);
+  });
+  return box;
 }
 
 function categoryIcon(p: EquipmentProduct): string {
@@ -322,6 +356,7 @@ function renderSuggestionFlow(wrap: HTMLElement, state: AppState, product: Equip
   header.className = 'suggestion-header';
   header.innerHTML = `<div class="manufacturer">${product.manufacturer}</div><div class="model">${product.model}</div>`;
   wrap.appendChild(header);
+  wrap.appendChild(renderProductEngineeringSheet(product));
 
   if (product.category === 'display') {
     renderDisplaySuggestion(wrap, state, product, room);
@@ -340,22 +375,16 @@ function renderSuggestionFlow(wrap: HTMLElement, state: AppState, product: Equip
     addBtn.textContent = 'Add to Design';
     addBtn.onclick = () => {
       const y = 1.6;
-      const snapped =
-        product.mounting?.wall !== false
-          ? snapWallMounted(room, product, 0, 0, y)
-          : {
-              position: { x: 0, y, z: 0 },
-              rotationY: 0,
-              wall: undefined as undefined
-            };
-      const wall = snapped.wall ?? getPresentationWall(room);
+      const wall = selectPresentationWall(room, { seats: state.seats, tables: state.tables, product });
+      const mounted = centerDisplayOnWall(room, product, wall);
       state.addEquipment({
         instanceId: `eq-${Date.now()}`,
         productId: product.id,
         name: `${product.manufacturer} ${product.model}`,
-        position: snapped.position,
-        rotationY: snapped.rotationY,
-        wall
+        position: { x: mounted.x, y, z: mounted.z },
+        rotationY: mounted.rotationY,
+        wall,
+        placementMode: 'smart'
       });
       browserState.openProductId = null;
       state.setStep('equipment');
@@ -389,7 +418,7 @@ function renderSuggestionFlow(wrap: HTMLElement, state: AppState, product: Equip
 }
 
 function renderDisplaySuggestion(wrap: HTMLElement, state: AppState, product: EquipmentProduct, room: RoomModel): void {
-  let suggestion = suggestDisplayPlacement(room, product);
+  let suggestion = suggestDisplayPlacement(room, product, { seats: state.seats, tables: state.tables });
 
   const box = document.createElement('div');
   box.className = 'suggestion-box';
@@ -477,10 +506,6 @@ function renderDisplaySuggestion(wrap: HTMLElement, state: AppState, product: Eq
   acceptBtn.onclick = () => {
     const wall = (adjustBox.style.display === 'none' ? suggestion.wall : (wallSelect.value as typeof suggestion.wall));
     const centerHeightM = adjustBox.style.display === 'none' ? suggestion.centerHeightM : Number(heightInput.value);
-    // Always route through centerDisplayOnWall — even for a manually chosen
-    // wall — so a manual override still centers within that wall's clear
-    // span instead of reintroducing the old "dead-center the wall, ignore
-    // any door/window" bug.
     const placement = centerDisplayOnWall(room, product, wall);
 
     const instance: EquipmentInstance = {

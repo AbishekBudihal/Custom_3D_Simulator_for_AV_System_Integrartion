@@ -5,9 +5,10 @@
 import type { EquipmentProduct } from '../catalog/EquipmentCatalog';
 import type { RoomModel } from '../room/RoomModel';
 import type { TableSpec } from '../room/SeatingGenerator';
+import { displayIntersectsOpeningClearance, displayNearOpening } from './placement/PlacementCandidateEngine';
 
 export interface PlacementNote {
-  status: 'valid' | 'warning';
+  status: 'valid' | 'warning' | 'invalid';
   note: string;
 }
 
@@ -20,6 +21,11 @@ export function exclusiveWall(product: EquipmentProduct): boolean {
   if (product.category === 'display') return true;
   if (product.camera?.mount === 'wall') return true;
   return !!product.mounting?.wall && !product.mounting.ceiling && !product.mounting.floor;
+}
+
+export function exclusiveTable(product: EquipmentProduct): boolean {
+  if (product.microphone?.mount === 'table' || product.camera?.mount === 'table') return true;
+  return !!product.mounting?.table && !product.mounting.wall && !product.mounting.ceiling && !product.mounting.floor;
 }
 
 export function exclusiveFloor(product: EquipmentProduct): boolean {
@@ -47,6 +53,25 @@ export function evaluatePlacement(
   }
   if (exclusiveWall(product) && Math.abs(position.y) < 0.2) {
     return { status: 'warning', note: '⚠ Wall-mounted device is at floor height' };
+  }
+  if (exclusiveFloor(product) && position.y > 0.6) {
+    return { status: 'warning', note: '⚠ Floor-only device is not near the floor' };
+  }
+  if (exclusiveWall(product)) {
+    const nearWall =
+      Math.abs(Math.abs(position.x) - room.width / 2) < 0.55 || Math.abs(Math.abs(position.z) - room.depth / 2) < 0.55;
+    if (!nearWall) {
+      return { status: 'warning', note: '⚠ Wall-mounted device is not on a wall' };
+    }
+  }
+  if (product.category === 'display' && displayIntersectsOpeningClearance(room, position)) {
+    return { status: 'invalid', note: '✕ Intersects door clearance' };
+  }
+  if (product.category === 'display' && displayNearOpening(room, position, 'door', 0.45)) {
+    return { status: 'warning', note: '⚠ Near door circulation' };
+  }
+  if (product.category === 'display' && displayNearOpening(room, position, 'window', 0.2)) {
+    return { status: 'warning', note: '⚠ Near window — glare risk' };
   }
   const tableHit = tables.find((t) => {
     const hx = t.sizeX / 2;

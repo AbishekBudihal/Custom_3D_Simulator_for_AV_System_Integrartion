@@ -7,18 +7,18 @@ import type { RoomModel } from './RoomModel';
 import { furnitureTemplate } from './FurnitureCatalog';
 import { aabbsOverlap, type Aabb } from './FurnitureGeometry';
 import { makeFurnitureTable, roomExclusionAabbs, MIN_WALK_M } from './ConferenceLayout';
+import { trainingTableDimensions } from './ParametricTable';
 import type { Seat, SeatingConfig, SeatingGenerationResult } from './SeatingGenerator';
 import { roomZonesFor, type RoomZone } from './RoomZones';
 
-function podFootprint(seatsAtTable: number): { tableW: number; tableD: number; cellW: number; cellD: number } {
+function podFootprint(seatsAtTable: number, seatWidth: number): { tableW: number; tableD: number; cellW: number; cellD: number } {
   const desk = furnitureTemplate('generic-training-desk');
-  const tableD = desk.typicalWidth;
-  const tableW = seatsAtTable === 1 ? 0.7 : 1.2;
+  const dim = trainingTableDimensions(seatsAtTable, seatWidth);
   return {
-    tableW,
-    tableD,
-    cellW: tableW + 0.55,
-    cellD: tableD + desk.chairFromEdge + 0.45 + MIN_WALK_M * 0.35
+    tableW: dim.sizeX,
+    tableD: dim.sizeZ,
+    cellW: dim.sizeX + 0.55,
+    cellD: dim.sizeZ + desk.chairFromEdge + 0.45 + MIN_WALK_M * 0.35
   };
 }
 
@@ -39,7 +39,7 @@ export function generateIndependentTables(
   const maxZ = zone ? zone.maxZ : room.depth / 2;
   const usableW = maxX - minX - 2 * cfg.sideClearance * (zone ? 0.5 : 1);
   const usableD = maxZ - minZ - cfg.frontClearance - cfg.rearClearance * (zone ? 0.6 : 1);
-  const fp = podFootprint(opts.seatsPerTable);
+  const fp = podFootprint(opts.seatsPerTable, cfg.seatWidth);
   const cols = Math.max(1, Math.floor(usableW / fp.cellW));
   const rows = Math.max(1, Math.floor(usableD / fp.cellD));
   const originX = (minX + maxX) / 2 - ((cols - 1) * fp.cellW) / 2;
@@ -51,7 +51,7 @@ export function generateIndependentTables(
     for (let c = 0; c < cols && placed < cfg.capacity; c++) {
       const remaining = cfg.capacity - placed;
       const nHere = Math.min(opts.seatsPerTable, remaining) as 1 | 2;
-      const local = podFootprint(nHere);
+      const local = podFootprint(nHere, cfg.seatWidth);
       const cx = originX + c * fp.cellW;
       const cz = originZ + r * fp.cellD;
       const chairZ = cz + local.tableD / 2 + desk.chairFromEdge;
@@ -62,7 +62,7 @@ export function generateIndependentTables(
         cz,
         local.tableW,
         local.tableD,
-        { shape: 'rect', hasCableWell: false, zoneId: zone?.id }
+        { shape: 'rect', hasCableWell: false, zoneId: zone?.id, presetId: nHere === 1 ? 'classroom' : 'training' }
       );
       const chairXs =
         nHere === 1 ? [cx] : [cx - local.tableW * 0.22, cx + local.tableW * 0.22];

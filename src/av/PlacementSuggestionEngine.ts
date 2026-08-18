@@ -16,7 +16,7 @@
  */
 
 import type { RoomModel } from '../room/RoomModel';
-import type { Seat } from '../room/SeatingGenerator';
+import type { Seat, TableSpec } from '../room/SeatingGenerator';
 import type { EquipmentProduct } from '../catalog/EquipmentCatalog';
 import {
   computeWallCandidates,
@@ -26,6 +26,7 @@ import {
   type WallCandidate,
   type WallKey
 } from '../room/RoomGeometry';
+import { scorePlacementWalls, selectPresentationWall } from './placement/PlacementCandidateEngine';
 import {
   evaluateRoomAudioCoverage,
   type SpeakerPlacement,
@@ -105,41 +106,62 @@ export function centerDisplayOnWall(
  * best-scoring wall overall (with a warning) only if literally nothing
  * fits.
  */
-export function suggestDisplayPlacement(room: RoomModel, product: EquipmentProduct): DisplayPlacementSuggestion {
+export function suggestDisplayPlacement(
+  room: RoomModel,
+  product: EquipmentProduct,
+  ctx: { seats?: Seat[]; tables?: TableSpec[] } = {}
+): DisplayPlacementSuggestion {
   const canWallMount = product.mounting?.wall ?? true;
   const mount: 'wall' | 'cart' = canWallMount ? 'wall' : 'cart';
 
   const { widthM } = requiredFootprint(product);
   const candidates = computeWallCandidates(room, widthM, 0);
-  const preferred = getPresentationWall(room);
+  const ranked = scorePlacementWalls(room, {
+    product,
+    seats: ctx.seats,
+    tables: ctx.tables
+  });
+
+  const honorOverride = !!room.presentationWall && !(ctx.seats && ctx.seats.length);
+  const preferred = honorOverride ? room.presentationWall! : selectPresentationWall(room, {
+    product,
+    seats: ctx.seats,
+    tables: ctx.tables
+  });
 
   const preferredCandidate = candidates.find((c) => c.wall === preferred && c.valid);
-  const best = preferredCandidate ?? candidates.find((c) => c.valid) ?? candidates[0];
+  const scoredBest = ranked.find((c) => !c.rejected);
+  const best = honorOverride
+    ? preferredCandidate ?? candidates.find((c) => c.valid) ?? candidates[0]
+    : candidates.find((c) => c.wall === scoredBest?.wall) ?? preferredCandidate ?? candidates.find((c) => c.valid) ?? candidates[0];
 
   const centerHeightM = centerHeightFor(room, product);
   const alongCenter = best.bestSpanStartM + best.usableWidthM / 2;
   const inset = room.wallThickness + 0.03;
   const { x, z } = wallMountPoint(room, best.wall, alongCenter, inset);
 
-  const rejectionNotes = candidates
-    .filter((c) => c.wall !== best.wall && (c.hasDoor || c.hasWindow || !c.valid))
-    .map((c) => `${c.wall} wall — ${c.reasons.join(', ') || 'lower score'} (score ${c.score})`);
+  const av = ranked.find((c) => c.wall === best.wall);
+  const rejectionNotes = ranked
+    .filter((c) => c.wall !== best.wall)
+    .slice(0, 3)
+    .map((c) => `${c.wall}: ${c.reasons[0] ?? 'lower score'}`);
 
   const rationaleParts = [
-    `Bottom of screen set to ${DISPLAY_BOTTOM_AFF_M}m AFF (a common baseline that keeps content visible over seated viewers), centered in the ${best.wall} wall's clear ${best.usableWidthM.toFixed(1)}m span.`
+    `Bottom of screen set to ${DISPLAY_BOTTOM_AFF_M}m AFF, centered in the ${best.wall} wall's clear ${best.usableWidthM.toFixed(1)}m span.`
   ];
+  if (av?.reasons.length) rationaleParts.push(av.reasons.slice(0, 3).join('; ') + '.');
   if (best.hasDoor || best.hasWindow) {
     rationaleParts.push(`That wall has an opening, but the display is centered in the remaining clear area so it never overlaps it.`);
   }
   if (!best.valid) {
     rationaleParts.push(
-      `Warning: no wall has ${widthM.toFixed(1)}m of clear width for this display — using the best available (${best.wall} wall, ${best.usableWidthM.toFixed(1)}m clear). Consider a smaller display or moving furniture/openings.`
+      `Warning: no wall has ${widthM.toFixed(1)}m of clear width for this display — using the best available (${best.wall} wall, ${best.usableWidthM.toFixed(1)}m clear).`
     );
   }
   if (rejectionNotes.length) {
-    rationaleParts.push(`Other walls considered: ${rejectionNotes.join('; ')}.`);
+    rationaleParts.push(`Other walls: ${rejectionNotes.join('; ')}.`);
   }
-  rationaleParts.push('This is a starting point — check it against AVIXA DISCAS viewing-distance guidance for this room once seats are analyzed.');
+  rationaleParts.push('Starting placement from spatial scoring plus the existing viewing engine — not a licensed DISCAS solver.');
 
   return {
     wall: best.wall,

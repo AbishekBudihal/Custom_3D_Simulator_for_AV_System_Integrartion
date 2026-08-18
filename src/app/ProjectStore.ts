@@ -11,6 +11,9 @@ import type { RoomModel } from '../room/RoomModel';
 import type { Seat, TableSpec } from '../room/SeatingGenerator';
 import type { EquipmentInstance } from '../catalog/EquipmentCatalog';
 import type { SystemConnection, SystemGroup, SystemRoute } from '../system/SystemTypes';
+import { cachedCableRoute, invalidateCableRoutes } from '../system/CableRouter';
+import { cableRouteContext } from '../system/cableContext';
+import { loadDefaultCatalog } from '../catalog/loadCatalog';
 import type { AVRack } from '../av/AVRack';
 
 export interface ProjectFile {
@@ -55,7 +58,14 @@ export function serializeProject(state: AppState): ProjectFile {
     tables: state.tables,
     racks: state.racks,
     equipment: state.equipment,
-    connections: state.connections,
+    connections: state.connections.map((c) => {
+      const route = cachedCableRoute(c, cableRouteContext(state, loadDefaultCatalog()));
+      return {
+        ...c,
+        estimatedLengthM: route.totalLength,
+        route
+      };
+    }),
     routes: state.routes,
     systemGroups: state.systemGroups,
     systemLayout: state.systemLayout,
@@ -109,6 +119,7 @@ export function loadProjectInto(state: AppState, file: ProjectFile): { ok: true 
     state.systemLayout = JSON.parse(JSON.stringify(file.systemLayout ?? {}));
     state.selection = { kind: 'none', id: null };
     state.selectedConnectionId = null;
+    invalidateCableRoutes();
     state.clearHistory();
     state.notify();
     return { ok: true };

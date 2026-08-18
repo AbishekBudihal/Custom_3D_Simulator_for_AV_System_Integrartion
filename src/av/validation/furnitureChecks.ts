@@ -15,6 +15,7 @@ import {
   WALKWAY_CLEARANCE_M,
   WALL_CLEARANCE_M
 } from '../../room/FurnitureGeometry';
+import { practicalSeatCapacity, seatsOwnedByTable } from '../../room/ParametricTable';
 
 function finding(
   partial: Omit<ValidationFinding, 'affectedObjects' | 'recommendedActions' | 'potentialVariables'> & {
@@ -349,6 +350,59 @@ export const checkFurnPresentationZone: ValidationCheck = {
   }
 };
 
+export const checkFurnSeatDensity: ValidationCheck = {
+  code: 'FURN-008',
+  category: 'furniture',
+  title: 'Excessive seat density',
+  evaluate(ctx: ProjectValidationContext): ValidationFinding[] {
+    if (ctx.tables.length === 0) return [];
+    const findings: ValidationFinding[] = [];
+    for (const t of ctx.tables) {
+      const owned = seatsOwnedByTable(t, ctx.seats, ctx.tables.length);
+      const practical = practicalSeatCapacity(t);
+      const demand = t.requestedSeats ?? owned.length;
+      if (demand > practical) {
+        findings.push(
+          finding({
+            id: `FURN-008:${t.id}`,
+            code: 'FURN-008',
+            severity: 'warning',
+            category: 'furniture',
+            title: 'Excessive seat density',
+            message: `Table ${t.id} has demand for ${demand} chairs; about ${practical} fit at recommended spacing (${owned.length} placed).`,
+            explanation:
+              'Occupant count is limited by usable table edge length and seat spacing. Overlapping chairs are not placed; remaining demand needs a larger table or another table.',
+            metric: {
+              name: 'Seats at table',
+              actual: String(demand),
+              expected: `≤ ${practical}`,
+              unit: 'seats'
+            },
+            objectId: t.id,
+            affectedObjects: [{ kind: 'table', id: t.id, label: t.id }],
+            recommendedActions: ['Increase table dimensions', 'Add another table', 'Reduce requested seats'],
+            potentialVariables: ['Table size', 'Seat spacing', 'Table count'],
+            source: 'Usable table edge length / recommended seat spacing from furniture template.'
+          })
+        );
+      }
+    }
+    if (findings.length) return findings;
+    return [
+      finding({
+        id: 'FURN-008',
+        code: 'FURN-008',
+        severity: 'pass',
+        category: 'furniture',
+        title: 'Seat density',
+        message: 'Chair counts stay within practical capacity of each table.',
+        explanation: 'Compared seats attached to each TableSpec with edge-length capacity.',
+        source: 'Parametric table edge capacity vs Seat[] tableId.'
+      })
+    ];
+  }
+};
+
 export const FURNITURE_CHECKS: ValidationCheck[] = [
   checkFurnTableWall,
   checkFurnOpenings,
@@ -356,5 +410,6 @@ export const FURNITURE_CHECKS: ValidationCheck[] = [
   checkFurnChairTable,
   checkFurnChairClearance,
   checkFurnSeatingFits,
-  checkFurnPresentationZone
+  checkFurnPresentationZone,
+  checkFurnSeatDensity
 ];

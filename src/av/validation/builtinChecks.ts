@@ -21,6 +21,7 @@ import { resolveProjectSpeakers, summarizeSpeakerCoverage } from '../SpeakerAnal
 import { CAMERA_METHOD } from '../CameraCoverageEngine';
 import { resolveProjectCameras, summarizeCameraCoverage } from '../CameraAnalysis';
 import { FURNITURE_CHECKS } from './furnitureChecks';
+import { EQUIPMENT_CHECKS } from './equipmentChecks';
 
 function finding(
   partial: Omit<ValidationFinding, 'affectedObjects' | 'recommendedActions' | 'potentialVariables'> & {
@@ -977,5 +978,6 @@ export const BUILTIN_CHECKS: ValidationCheck[] = [
   checkCameraOutsideFov,
   checkCameraBlockedSightline,
   checkCameraCoverageInsufficient,
-  ...FURNITURE_CHECKS
+  ...FURNITURE_CHECKS,
+  ...EQUIPMENT_CHECKS
 ];

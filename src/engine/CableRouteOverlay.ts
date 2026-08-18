@@ -8,6 +8,8 @@ const SIG_COLOR: Record<string, number> = {
   USB: 0xc4a35a,
   NETWORK: 0x5aa88a,
   CONTROL: 0xa8a8a8,
+  HDBASET: 0x6aa4e8,
+  FIBER: 0xb07a9a,
   POWER: 0xb07a4a
 };
 

@@ -46,14 +46,14 @@ describe('Furniture-first conference layout', () => {
   });
 });
 
-describe('Furniture validation FURN-001…007', () => {
+describe('Furniture validation FURN-001…008', () => {
   it('passes FURN codes for a fitted 8-person conference table', () => {
     const room = bareRoom({ width: 8, depth: 7 });
     const { seats, tables } = generateSeating(room, defaultSeatingConfig(8, 'boardroom'));
     const report = runDesignValidation({ room, seats, tables, equipment: [], catalog: new EquipmentCatalog() });
     const furn = report.findings.filter((f) => f.code.startsWith('FURN-'));
     expect(furn.map((f) => f.code).sort()).toEqual(
-      ['FURN-001', 'FURN-002', 'FURN-003', 'FURN-004', 'FURN-005', 'FURN-006', 'FURN-007'].sort()
+      ['FURN-001', 'FURN-002', 'FURN-003', 'FURN-004', 'FURN-005', 'FURN-006', 'FURN-007', 'FURN-008'].sort()
     );
     furn.forEach((f) => expect(f.severity).toBe('pass'));
   });

@@ -7,6 +7,11 @@ import type { EquipmentProduct } from './EquipmentCatalog';
 
 export const NOT_SPECIFIED = 'Not specified';
 
+export function m(meters: number | undefined): string {
+  if (meters == null || !Number.isFinite(meters) || meters <= 0) return NOT_SPECIFIED;
+  return `${meters.toFixed(2)} m`;
+}
+
 export function mm(meters: number | undefined): string {
   if (meters == null || !Number.isFinite(meters)) return NOT_SPECIFIED;
   return `${Math.round(meters * 1000)} mm`;
@@ -35,7 +40,9 @@ export function mountSummary(product: EquipmentProduct): string {
   const allowed: string[] = [];
   if (product.mounting?.wall) allowed.push('wall');
   if (product.mounting?.ceiling) allowed.push('ceiling');
-  if (product.mounting?.floor) allowed.push('floor');
+  if (product.mounting?.table) allowed.push('table');
+  if (product.mounting?.rack) allowed.push('rack');
+  if (product.mounting?.freestanding) allowed.push('freestanding');
   if (allowed.length) bits.push(`allowed: ${allowed.join(', ')}`);
   return bits.length ? bits.join(' · ') : NOT_SPECIFIED;
 }

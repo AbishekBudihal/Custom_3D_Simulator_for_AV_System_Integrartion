@@ -1,4 +1,4 @@
-import type { AppState } from '../../app/AppState';
+﻿import type { AppState } from '../../app/AppState';
 import { loadDefaultCatalog } from '../../catalog/loadCatalog';
 import { snapEquipment } from '../../interaction/SnapEngine';
 import { renderDisplayAnalysisControls } from './DisplayAnalysisPanel';
@@ -10,25 +10,46 @@ import { renderRoutingMatrix } from './RoutingMatrix';
 import { describePath, enumerateSignalPaths } from '../../system/SignalPathEngine';
 import { conferenceClearanceM } from '../../room/FurnitureRelayout';
 import { furnitureTemplate } from '../../room/FurnitureCatalog';
+import {
+  matchTablePreset,
+  practicalSeatCapacity,
+  seatsOwnedByTable,
+  TABLE_PRESETS,
+  type TablePresetId
+} from '../../room/ParametricTable';
 import { getPresentationWall } from '../../room/RoomGeometry';
 import { validationReportFor } from '../../av/validation/validationCache';
 import { usedRackUnits } from '../../av/AVRack';
 import { inspectSeat } from '../../av/SeatInspection';
-import { compatibleDestinations, compatibleSources } from '../../system/PortCompatibility';
+import { compatibleDestinations, compatibleSources, canConnectPorts } from '../../system/PortCompatibility';
 import { cachedCableRoute } from '../../system/CableRouter';
 import { cableRouteContext } from '../../system/cableContext';
 import { cableTypeOf } from '../../system/CableBoq';
+import {
+  deviceSignalFlowLines,
+  portConnectionRole,
+  portOccupancyState
+} from '../../system/ConnectionStatus';
 import {
   catalogCardLine,
   deg,
   inputSummary,
   kg,
   mm,
+  m,
   mountSummary,
   NOT_SPECIFIED,
   typeLabel
 } from '../../catalog/CatalogPresentation';
 import { evaluatePlacement } from '../../av/PlacementFeedback';
+import {
+  analysisSupportLine,
+  catalogMountKinds,
+  defaultMountingKind,
+  productDescription,
+  productFamily,
+  type MountingKind
+} from '../../catalog/CatalogEngineering';
 
 const catalog = loadDefaultCatalog();
 
@@ -46,7 +67,7 @@ function statusPill(status: 'pass' | 'warning' | 'fail' | 'info'): HTMLElement {
   const el = document.createElement('span');
   el.className = `status-pill ${status === 'info' ? 'info' : status}`;
   el.textContent =
-    status === 'pass' ? '✓ PASS' : status === 'warning' ? '⚠ WARNING' : status === 'fail' ? '✕ ERROR' : 'ⓘ INFO';
+    status === 'pass' ? '✓ PASS' : status === 'warning' ? '⚠ WARNING' : status === 'fail' ? '✕ ERROR' : '○ INFO';
   return el;
 }
 
@@ -75,6 +96,30 @@ function section(container: HTMLElement, title: string, open = true): HTMLElemen
   d.append(s, inner);
   container.appendChild(d);
   return inner;
+}
+
+function selectField(
+  container: HTMLElement,
+  label: string,
+  value: string,
+  options: { value: string; label: string }[],
+  onChange: (v: string) => void
+): void {
+  const wrap = document.createElement('div');
+  wrap.className = 'field';
+  const lbl = document.createElement('label');
+  lbl.textContent = label;
+  const input = document.createElement('select');
+  options.forEach((o) => {
+    const opt = document.createElement('option');
+    opt.value = o.value;
+    opt.textContent = o.label;
+    if (o.value === value) opt.selected = true;
+    input.appendChild(opt);
+  });
+  input.onchange = () => onChange(input.value);
+  wrap.append(lbl, input);
+  container.appendChild(wrap);
 }
 
 function numField(container: HTMLElement, label: string, value: number, step: number, onChange: (v: number) => void): void {
@@ -186,14 +231,17 @@ function renderTableInspector(body: HTMLElement, state: AppState, tableId: strin
   if (!table) return;
   const tmpl = furnitureTemplate(table.furnitureId ?? 'generic-conference');
   const beginner = state.uiComplexity === 'beginner';
+  const owned = seatsOwnedByTable(table, state.seats, state.tables.length);
+  const practical = practicalSeatCapacity(table);
+  const preset = (table.presetId as TablePresetId | undefined) ?? matchTablePreset(table);
 
-  metricRow(body, 'Type', 'Conference');
+  metricRow(body, 'Type', tmpl.name);
   metricRow(
     body,
     'Dimensions',
-    `${table.sizeX.toFixed(2)} × ${table.sizeZ.toFixed(2)} × ${(table.height ?? 0.73).toFixed(2)} m`
+    `${table.sizeX.toFixed(2)} Ã— ${table.sizeZ.toFixed(2)} Ã— ${(table.height ?? 0.73).toFixed(2)} m`
   );
-  metricRow(body, 'Seats', String(state.seats.length));
+  metricRow(body, 'Seats at this table', `${owned.length} / ${practical} practical`);
   if (state.room) {
     const clear = conferenceClearanceM(state.room, table);
     metricRow(body, 'Clearance', `${clear.toFixed(2)} m`, statusPill(clear >= 0.7 ? 'pass' : 'warning'));
@@ -202,24 +250,52 @@ function renderTableInspector(body: HTMLElement, state: AppState, tableId: strin
   why(
     body,
     'Why is this table this size?',
-    'Length and width come from seating capacity, seat spacing, and circulation — not from the distance between walls.'
+    'Width, depth and height are parametric. Chair positions are recomputed from usable edge length and occupant spacing â€” the mesh is not scaled independently of seating.'
   );
 
   const geo = section(body, 'Geometry', true);
-  numField(geo, 'Length (m)', table.sizeZ, 0.05, (v) => state.updateTable(tableId, { sizeZ: v }));
+  selectField(
+    geo,
+    'Preset',
+    preset,
+    TABLE_PRESETS.map((p) => ({ value: p.id, label: p.label })),
+    (v) => state.applyTablePreset(tableId, v as TablePresetId)
+  );
   numField(geo, 'Width (m)', table.sizeX, 0.05, (v) => state.updateTable(tableId, { sizeX: v }));
+  numField(geo, 'Depth (m)', table.sizeZ, 0.05, (v) => state.updateTable(tableId, { sizeZ: v }));
   numField(geo, 'Height (m)', table.height ?? 0.73, 0.01, (v) => state.updateTable(tableId, { height: v }));
+  selectField(
+    geo,
+    'Shape',
+    table.shape ?? 'rect',
+    [
+      { value: 'rect', label: 'Rectangle' },
+      { value: 'rounded_rect', label: 'Rounded rectangle' },
+      { value: 'ellipse', label: 'Ellipse / round' }
+    ],
+    (v) => state.updateTable(tableId, { shape: v as 'rect' | 'rounded_rect' | 'ellipse' })
+  );
 
   const place = section(body, 'Placement', !beginner);
   numField(place, 'Position X (m)', table.centerX, 0.05, (v) => state.updateTable(tableId, { centerX: v }));
   numField(place, 'Position Z (m)', table.centerZ, 0.05, (v) => state.updateTable(tableId, { centerZ: v }));
-  metricRow(place, 'Rotation', '0° (90° steps)');
+  metricRow(place, 'Orientation', table.sizeZ >= table.sizeX ? 'Long axis along room depth (Z)' : 'Long axis along room width (X)');
+  const rotBtn = document.createElement('button');
+  rotBtn.className = 'btn';
+  rotBtn.textContent = 'Rotate 90Â°';
+  rotBtn.onclick = () => state.rotateSelectedTable90();
+  place.appendChild(rotBtn);
 
   const seating = section(body, 'Seating', true);
-  metricRow(seating, 'Capacity', String(state.seats.length));
-  metricRow(seating, 'Seats per long side', String(Math.max(1, Math.ceil((state.seats.length - 1) / 2))));
-  metricRow(seating, 'End seats', state.seats.length > 6 ? '1' : '0');
-  metricRow(seating, 'Orientation', table.sizeZ >= table.sizeX ? 'Long axis along room length' : 'Rotated 90°');
+  numField(seating, 'Seat count', owned.length, 1, (v) => state.setTableSeatCount(tableId, v));
+  metricRow(seating, 'Practical capacity', String(practical));
+  metricRow(seating, 'Spacing', `${tmpl.recommendedSeatSpacing.toFixed(2)} m`);
+  if (table.requestedSeats && table.requestedSeats > practical) {
+    const warn = document.createElement('div');
+    warn.className = 'badge-note';
+    warn.textContent = `âš  ${table.requestedSeats} seats requested. This table supports about ${practical}. Increase dimensions or add another table.`;
+    seating.appendChild(warn);
+  }
 
   if (!beginner) {
     const eng = section(body, 'Engineering', true);
@@ -233,7 +309,7 @@ function renderTableInspector(body: HTMLElement, state: AppState, tableId: strin
     (f) => f.affectedObjects.some((o) => o.id === tableId) || f.code.startsWith('FURN')
   );
   if (!findings.length) {
-    metricRow(val, 'Furniture', '✓ PASS', statusPill('pass'));
+    metricRow(val, 'Furniture', 'âœ“ PASS', statusPill('pass'));
   } else {
     findings.slice(0, 6).forEach((f) => {
       const sev = f.severity === 'error' ? 'fail' : f.severity === 'warning' ? 'warning' : f.severity === 'info' ? 'info' : 'pass';
@@ -274,15 +350,15 @@ function renderRackInspector(body: HTMLElement, state: AppState, rackId: string)
     .sort((a, b) => (a.rackPositionRU ?? 0) - (b.rackPositionRU ?? 0));
   const used = usedRackUnits(assigned);
   metricRow(body, 'Rack type', rack.kind === 'wall' ? 'Wall-mounted' : 'Floor-standing');
-  metricRow(body, 'Height / RU', `${rack.ruTotal} RU · ${rack.height.toFixed(2)} m`);
-  metricRow(body, 'Width × depth', `${rack.width.toFixed(2)} × ${rack.depth.toFixed(2)} m`);
+  metricRow(body, 'Height / RU', `${rack.ruTotal} RU Â· ${rack.height.toFixed(2)} m`);
+  metricRow(body, 'Width Ã— depth', `${rack.width.toFixed(2)} Ã— ${rack.depth.toFixed(2)} m`);
   metricRow(body, 'Used RU', String(used));
   metricRow(body, 'Available RU', String(rack.ruTotal - used));
   metricRow(body, 'Front clearance', `${rack.frontClearance.toFixed(2)} m`);
   metricRow(body, 'Rear clearance', `${rack.rearClearance.toFixed(2)} m`);
   numField(body, 'Position X (m)', rack.x, 0.05, (v) => state.updateRack(rackId, { x: v }));
   numField(body, 'Position Z (m)', rack.z, 0.05, (v) => state.updateRack(rackId, { z: v }));
-  numField(body, 'Rotation Y (°)', (rack.rotationY * 180) / Math.PI, 5, (v) =>
+  numField(body, 'Rotation Y (Â°)', (rack.rotationY * 180) / Math.PI, 5, (v) =>
     state.updateRack(rackId, { rotationY: (v * Math.PI) / 180 })
   );
 
@@ -300,7 +376,7 @@ function renderRackInspector(body: HTMLElement, state: AppState, rackId: string)
     metricRow(
       body,
       `${e.name}`,
-      ru && ru > 0 ? `U${e.rackPositionRU ?? '—'} · ${ru} RU` : 'DATA INCOMPLETE — no RU'
+      ru && ru > 0 ? `U${e.rackPositionRU ?? 'â€”'} Â· ${ru} RU` : 'DATA INCOMPLETE â€” no RU'
     );
   });
   if (!assigned.length) {
@@ -328,7 +404,7 @@ function renderSeatInspector(body: HTMLElement, state: AppState, seatId: string)
 
   numField(body, 'Position X (m)', seat.x, 0.05, (v) => state.updateSeat(seatId, { x: v }));
   numField(body, 'Position Z (m)', seat.z, 0.05, (v) => state.updateSeat(seatId, { z: v }));
-  numField(body, 'Rotation (°)', (seat.facing * 180) / Math.PI, 5, (v) =>
+  numField(body, 'Rotation (Â°)', (seat.facing * 180) / Math.PI, 5, (v) =>
     state.updateSeat(seatId, { facing: (v * Math.PI) / 180 })
   );
 
@@ -338,14 +414,14 @@ function renderSeatInspector(body: HTMLElement, state: AppState, seatId: string)
   if (!insp.display) {
     const note = document.createElement('div');
     note.className = 'inspector-empty';
-    note.textContent = 'No display placed yet — add one in the Equipment step to see viewing analysis for this seat.';
+    note.textContent = 'No display placed yet â€” add one in the Equipment step to see viewing analysis for this seat.';
     body.appendChild(note);
   } else {
     const analysis = insp.display;
     const dt = section(body, 'DISPLAY', true);
     metricRow(dt, 'Distance', `${analysis.distance.value} m`);
-    metricRow(dt, 'Horizontal angle', `${analysis.horizontalAngle.value}°`, statusPill(analysis.horizontalAngle.status));
-    metricRow(dt, 'Vertical angle', `${analysis.verticalAngle.value}°`, statusPill(analysis.verticalAngle.status));
+    metricRow(dt, 'Horizontal angle', `${analysis.horizontalAngle.value}Â°`, statusPill(analysis.horizontalAngle.status));
+    metricRow(dt, 'Vertical angle', `${analysis.verticalAngle.value}Â°`, statusPill(analysis.verticalAngle.status));
     metricRow(dt, 'Viewing distance', `${analysis.viewingDistance.value} m`, statusPill(analysis.viewingDistance.status));
     metricRow(dt, 'Visibility', analysis.visibility.value.replace('_', ' '), statusPill(analysis.visibility.status));
     metricRow(dt, 'Sightline', analysis.sightline.value, statusPill(analysis.sightline.status));
@@ -386,8 +462,8 @@ function renderSeatInspector(body: HTMLElement, state: AppState, seatId: string)
       micSec,
       'Pickup (geometric)',
       micR.covered
-        ? `inside · ${micR.nearestDistanceM ?? '—'} m${micR.angularDeltaDeg != null ? ` · ${micR.angularDeltaDeg}°` : ''}`
-        : `outside · ${micR.nearestDistanceM ?? '—'} m`,
+        ? `inside Â· ${micR.nearestDistanceM ?? 'â€”'} m${micR.angularDeltaDeg != null ? ` Â· ${micR.angularDeltaDeg}Â°` : ''}`
+        : `outside Â· ${micR.nearestDistanceM ?? 'â€”'} m`,
       statusPill(micR.status)
     );
     const micNote = document.createElement('div');
@@ -418,12 +494,12 @@ function renderSeatInspector(body: HTMLElement, state: AppState, seatId: string)
     metricRow(
       spk,
       'Estimated SPL',
-      audio.splAtSeat != null ? `${audio.splAtSeat} dB @ ${audio.distanceM ?? '—'} m` : 'outside dispersion / DATA INCOMPLETE',
+      audio.splAtSeat != null ? `${audio.splAtSeat} dB @ ${audio.distanceM ?? 'â€”'} m` : 'outside dispersion / DATA INCOMPLETE',
       statusPill(audio.status)
     );
     const audioNote = document.createElement('div');
     audioNote.className = 'badge-note';
-    audioNote.textContent = 'Method: geometric / free-field estimate — not room-acoustic simulation.';
+    audioNote.textContent = 'Method: geometric / free-field estimate â€” not room-acoustic simulation.';
     spk.appendChild(audioNote);
     if (!audio.inDispersion || audio.status === 'fail') {
       const go = document.createElement('button');
@@ -446,7 +522,7 @@ function renderSeatInspector(body: HTMLElement, state: AppState, seatId: string)
     metricRow(
       camSec,
       'Coverage',
-      cam.visible ? `visible · ${camIds.join(', ') || '—'}` : cam.inFov ? `blocked · ${camIds.join(', ')}` : 'outside FOV',
+      cam.visible ? `visible Â· ${camIds.join(', ') || 'â€”'}` : cam.inFov ? `blocked Â· ${camIds.join(', ')}` : 'outside FOV',
       statusPill(cam.status)
     );
     const camNote = document.createElement('div');
@@ -472,8 +548,9 @@ function renderEquipmentInspector(body: HTMLElement, state: AppState, instanceId
   const product = catalog.get(inst.productId);
   if (!product) return;
 
-  const ident = document.createElement('div');
-  ident.className = 'equip-identity';
+  const ident = section(body, 'IDENTITY', true);
+  const identHead = document.createElement('div');
+  identHead.className = 'equip-identity';
   const mfr = document.createElement('div');
   mfr.className = 'manufacturer';
   mfr.textContent = product.manufacturer;
@@ -482,18 +559,20 @@ function renderEquipmentInspector(body: HTMLElement, state: AppState, instanceId
   model.textContent = product.model;
   const cat = document.createElement('div');
   cat.className = 'muted';
-  cat.textContent = `${typeLabel(product)}${product.display ? ` · ${product.display.diagonalInches}"` : ''}`;
-  ident.append(mfr, model, cat);
-  body.appendChild(ident);
+  cat.textContent = `${typeLabel(product)}${product.display ? ` Â· ${product.display.diagonalInches}"` : ''}`;
+  identHead.append(mfr, model, cat);
+  ident.appendChild(identHead);
 
   const prov = document.createElement('span');
   prov.className = `provenance ${product.provenance}`;
   prov.textContent = `${product.provenance.replace('_', ' ')} data`;
-  body.appendChild(prov);
+  ident.appendChild(prov);
 
-  metricRow(body, 'Manufacturer', product.manufacturer || NOT_SPECIFIED);
-  metricRow(body, 'Model', product.model || NOT_SPECIFIED);
-  metricRow(body, 'Category', product.category.replace(/_/g, ' '));
+  metricRow(ident, 'Manufacturer', product.manufacturer || NOT_SPECIFIED);
+  metricRow(ident, 'Model', product.model || NOT_SPECIFIED);
+  metricRow(ident, 'Category', product.category.replace(/_/g, ' '));
+  metricRow(ident, 'Family', productFamily(product));
+  metricRow(ident, 'Description', productDescription(product));
   const nameField = document.createElement('div');
   nameField.className = 'field';
   const nameLbl = document.createElement('label');
@@ -502,23 +581,9 @@ function renderEquipmentInspector(body: HTMLElement, state: AppState, instanceId
   nameIn.value = inst.name;
   nameIn.onchange = () => state.updateEquipment(instanceId, { name: nameIn.value, placementMode: inst.placementMode });
   nameField.append(nameLbl, nameIn);
-  body.appendChild(nameField);
+  ident.appendChild(nameField);
 
-  if (['display', 'camera', 'speaker', 'microphone'].includes(product.category)) {
-    const analyze = document.createElement('button');
-    analyze.className = 'btn primary';
-    analyze.textContent =
-      product.category === 'display'
-        ? 'Analyze Display'
-        : product.category === 'camera'
-          ? 'Analyze FOV'
-          : product.category === 'speaker'
-            ? 'Analyze Coverage'
-            : 'Analyze Pickup';
-    analyze.onclick = () => state.analyzeEquipment(instanceId);
-    body.appendChild(analyze);
-  }
-
+  const eng = section(body, 'ENGINEERING', true);
   const dataStatus = document.createElement('div');
   dataStatus.className = 'badge-note';
   let incomplete = false;
@@ -530,120 +595,161 @@ function renderEquipmentInspector(body: HTMLElement, state: AppState, instanceId
   ) {
     incomplete = true;
     dataStatus.style.color = 'var(--warning)';
-    dataStatus.textContent = 'DATA INCOMPLETE — speaker SPL or dispersion missing. Simulation will not invent values.';
+    dataStatus.textContent = 'DATA INCOMPLETE â€” speaker SPL or dispersion missing. Simulation will not invent values.';
   } else if (product.category === 'microphone' && !(product.microphone?.pickupRadiusM && product.microphone.pickupRadiusM > 0)) {
     incomplete = true;
     dataStatus.style.color = 'var(--warning)';
-    dataStatus.textContent = 'DATA INCOMPLETE — pickupRadiusM missing.';
+    dataStatus.textContent = 'DATA INCOMPLETE â€” pickupRadiusM missing.';
   } else if (product.category === 'camera' && !(product.camera?.horizontalFovDeg && product.camera.horizontalFovDeg > 0)) {
     incomplete = true;
     dataStatus.style.color = 'var(--warning)';
-    dataStatus.textContent = 'DATA INCOMPLETE — horizontal FOV is required. Camera coverage unavailable.';
+    dataStatus.textContent = 'DATA INCOMPLETE â€” horizontal FOV is required. Camera coverage unavailable.';
   } else if (product.category === 'display' && (!product.physical.width || !product.physical.height)) {
     incomplete = true;
     dataStatus.style.color = 'var(--warning)';
-    dataStatus.textContent = 'DATA INCOMPLETE — display size missing.';
+    dataStatus.textContent = 'DATA INCOMPLETE â€” display size missing.';
   } else {
-    dataStatus.textContent = `DATA ${product.provenance.replace('_', ' ').toUpperCase()} — ${product.source ?? 'catalog record'}`;
+    dataStatus.textContent = `DATA ${product.provenance.replace('_', ' ').toUpperCase()} â€” ${product.source ?? 'catalog record'}`;
   }
-  body.appendChild(dataStatus);
-  if (product.category === 'display' && state.room) {
-    const wall = getPresentationWall(state.room);
-    why(
-      body,
-      'Why is the display here?',
-      `The ${wall} wall is the presentation span. Suggested placement stays off door and window exclusion zones.`
-    );
-  }
+  eng.appendChild(dataStatus);
   if (incomplete) {
-    why(body, 'Why is this warning shown?', dataStatus.textContent ?? 'Required catalog engineering data is missing.');
+    why(eng, 'Why is this warning shown?', dataStatus.textContent ?? 'Required catalog engineering data is missing.');
+    appendCatalogLink(eng, state);
   }
-  if (incomplete) appendCatalogLink(body, state);
-
+  metricRow(eng, 'Width', m(product.physical.width));
+  metricRow(eng, 'Height', m(product.physical.height));
+  metricRow(eng, 'Depth', m(product.physical.depth));
+  metricRow(eng, 'Weight', kg(product.physical.weightKg));
+  metricRow(eng, 'Catalog mounting', mountSummary(product));
   if (product.display) {
-    metricRow(body, 'Display technology', typeLabel(product));
-    metricRow(body, 'Screen size', `${product.display.diagonalInches}"`);
-    metricRow(body, 'Resolution', product.display.resolution || NOT_SPECIFIED);
-  }
-  const dims = section(body, 'DIMENSIONS', true);
-  metricRow(dims, 'Width', mm(product.physical.width));
-  metricRow(dims, 'Height', mm(product.physical.height));
-  metricRow(dims, 'Depth', mm(product.physical.depth));
-  metricRow(dims, 'Weight', kg(product.physical.weightKg));
-  metricRow(body, 'Mounting', mountSummary(product));
-  metricRow(body, 'Inputs / ports', inputSummary(product));
-  if (product.display) {
-    metricRow(body, 'Catalog summary', catalogCardLine(product));
+    metricRow(eng, 'Diagonal', `${product.display.diagonalInches}"`);
+    metricRow(eng, 'Resolution', product.display.resolution || NOT_SPECIFIED);
+    metricRow(eng, 'Aspect', product.display.aspectRatio || NOT_SPECIFIED);
+    metricRow(eng, 'Brightness', product.display.brightnessNits != null ? `${product.display.brightnessNits} cd/mÂ²` : NOT_SPECIFIED);
   }
   if (product.microphone) {
-    metricRow(body, 'Microphone type', product.microphone.pattern || NOT_SPECIFIED);
-    metricRow(body, 'Pickup pattern', product.microphone.pattern || NOT_SPECIFIED);
+    metricRow(eng, 'Pickup pattern', product.microphone.pattern || NOT_SPECIFIED);
     metricRow(
-      body,
+      eng,
       'Pickup radius',
       product.microphone.pickupRadiusM != null ? `${product.microphone.pickupRadiusM} m` : NOT_SPECIFIED
     );
-    metricRow(
-      body,
-      'Beam width',
-      product.microphone.beamWidthDeg != null ? `${product.microphone.beamWidthDeg}°` : NOT_SPECIFIED
-    );
-    metricRow(body, 'Coverage model', product.microphone.coverageModel ?? 'omni (disc if radius present)');
-    metricRow(body, 'Mount', product.microphone.mount || NOT_SPECIFIED);
-    metricRow(body, 'Network / interface', product.microphone.connection || NOT_SPECIFIED);
+    metricRow(eng, 'Beam width', product.microphone.beamWidthDeg != null ? `${product.microphone.beamWidthDeg}Â°` : NOT_SPECIFIED);
+    metricRow(eng, 'Coverage model', product.microphone.coverageModel ?? NOT_SPECIFIED);
   }
   if (product.speaker) {
-    metricRow(body, 'Speaker type', typeLabel(product));
     metricRow(
-      body,
+      eng,
       'Max SPL @ 1 m',
-      product.speaker.maxSplAt1m != null ? `${product.speaker.maxSplAt1m} dB` : 'DATA INCOMPLETE'
+      product.speaker.maxSplAt1m != null ? `${product.speaker.maxSplAt1m} dB` : NOT_SPECIFIED
     );
-    metricRow(
-      body,
-      'Coverage angle',
-      product.speaker.dispersionDeg != null
-        ? `${product.speaker.dispersionDeg}°`
-        : product.speaker.horizontalDispersionDeg != null && product.speaker.verticalDispersionDeg != null
-          ? `${product.speaker.horizontalDispersionDeg}° H / ${product.speaker.verticalDispersionDeg}° V`
-          : 'DATA INCOMPLETE'
-    );
-    metricRow(body, 'Horizontal dispersion', deg(product.speaker.horizontalDispersionDeg));
-    metricRow(body, 'Vertical dispersion', deg(product.speaker.verticalDispersionDeg));
-    metricRow(body, 'Mount', product.speaker.mount || NOT_SPECIFIED);
+    metricRow(eng, 'Dispersion', product.speaker.dispersionDeg != null ? `${product.speaker.dispersionDeg}Â°` : NOT_SPECIFIED);
+    metricRow(eng, 'Horizontal dispersion', deg(product.speaker.horizontalDispersionDeg));
+    metricRow(eng, 'Vertical dispersion', deg(product.speaker.verticalDispersionDeg));
+    metricRow(eng, 'Power', product.speaker.powerRating || NOT_SPECIFIED);
   }
   if (product.camera) {
-    metricRow(body, 'Horizontal FOV', product.camera.horizontalFovDeg != null ? deg(product.camera.horizontalFovDeg) : 'DATA INCOMPLETE');
-    metricRow(body, 'Vertical FOV', deg(product.camera.verticalFovDeg));
-    metricRow(body, 'Mount', product.camera.mount || NOT_SPECIFIED);
-    metricRow(body, 'Network / video', inputSummary(product));
+    metricRow(eng, 'Horizontal FOV', product.camera.horizontalFovDeg != null ? deg(product.camera.horizontalFovDeg) : NOT_SPECIFIED);
+    metricRow(eng, 'Vertical FOV', deg(product.camera.verticalFovDeg));
   }
-  if (product.category === 'rack' || product.rackUnits != null) {
-    metricRow(body, 'Rack units', product.rackUnits != null ? `${product.rackUnits} RU` : NOT_SPECIFIED);
-  }
+  if (product.rackUnits != null) metricRow(eng, 'Catalog RU', `${product.rackUnits} RU`);
+  metricRow(eng, 'Analysis', analysisSupportLine(product));
 
+  const pose = section(body, 'PLACEMENT', true);
+  if (product.category === 'display' && state.room) {
+    why(
+      pose,
+      'Why is the display here?',
+      `The ${getPresentationWall(state.room)} wall is the presentation span. Suggested placement stays off door and window exclusion zones.`
+    );
+  }
   const placeNote = evaluatePlacement(state.room, state.tables, product, inst.position);
   const placeEl = document.createElement('div');
   placeEl.className = 'badge-note';
-  placeEl.style.color = placeNote.status === 'valid' ? 'var(--success)' : 'var(--warning)';
+  placeEl.style.color = placeNote.status === 'valid' ? 'var(--success)' : placeNote.status === 'invalid' ? 'var(--danger, #b42318)' : 'var(--warning)';
   placeEl.textContent = placeNote.note;
-  body.appendChild(placeEl);
-
-  const pose = section(body, 'POSITION', true);
+  pose.appendChild(placeEl);
   numField(pose, 'X (m)', inst.position.x, 0.01, (v) =>
     state.updateEquipment(instanceId, { position: { ...inst.position, x: v } })
   );
-  numField(pose, 'Y / mounting height (m)', inst.position.y, 0.01, (v) =>
+  numField(pose, 'Y (m)', inst.position.y, 0.01, (v) =>
     state.updateEquipment(instanceId, { position: { ...inst.position, y: v } })
   );
   numField(pose, 'Z (m)', inst.position.z, 0.01, (v) =>
     state.updateEquipment(instanceId, { position: { ...inst.position, z: v } })
   );
-  numField(pose, 'Yaw (°)', (inst.rotationY * 180) / Math.PI, 5, (v) =>
+  numField(pose, 'Rotation Y (Â°)', (inst.rotationY * 180) / Math.PI, 5, (v) =>
     state.updateEquipment(instanceId, { rotationY: (v * Math.PI) / 180 })
   );
-  metricRow(pose, 'Pitch', NOT_SPECIFIED);
-  metricRow(pose, 'Roll', NOT_SPECIFIED);
+  const kinds = catalogMountKinds(product);
+  metricRow(pose, 'Mounting type', (inst.mountingKind ?? defaultMountingKind(product)).replace(/_/g, ' '));
+  if (kinds.length > 1) {
+    selectField(
+      pose,
+      'Project mounting',
+      inst.mountingKind ?? defaultMountingKind(product),
+      kinds.map((k) => ({ value: k, label: k })),
+      (v) => state.updateEquipment(instanceId, { mountingKind: v as MountingKind })
+    );
+  }
+
+  const origin = inst.origin === 'auto' && inst.placementMode !== 'manual' ? 'AUTO' : inst.placementMode === 'manual' || inst.origin === 'manual' ? 'MANUAL OVERRIDE' : inst.placementMode === 'smart' ? 'SMART' : '';
+  if (origin) {
+    const originNote = document.createElement('div');
+    originNote.className = 'badge-note';
+    originNote.style.color = origin === 'MANUAL OVERRIDE' ? 'var(--warning)' : 'var(--success)';
+    originNote.textContent =
+      origin === 'AUTO'
+        ? 'Placement: AUTO â€” generated starting position. Analysis uses this geometry.'
+        : origin === 'SMART'
+          ? 'Placement: SMART â€” catalog suggestion engine. Analysis uses this geometry.'
+          : 'Placement: MANUAL OVERRIDE â€” analysis uses this position. Auto Design will not move it silently.';
+    pose.appendChild(originNote);
+  }
+
+  const snapBtn = document.createElement('button');
+  snapBtn.className = 'btn';
+  snapBtn.textContent = 'Snap to valid surface';
+  snapBtn.onclick = () => {
+    if (!state.room) return;
+    const snapped = snapEquipment(state.room, product, inst.position, inst.rotationY);
+    state.updateEquipment(instanceId, {
+      position: snapped.position,
+      rotationY: snapped.rotationY,
+      wall: snapped.wall,
+      placementMode: 'manual'
+    });
+    state.setSnapNote(snapped.note);
+  };
+  pose.appendChild(snapBtn);
+
+  const sys = section(body, 'SYSTEM', true);
+  const ports = resolveInstancePorts(inst.instanceId, inst.productId, catalog);
+  const inputs = ports.filter((p) => p.direction === 'input' || p.direction === 'bidirectional').length;
+  const outputs = ports.filter((p) => p.direction === 'output' || p.direction === 'bidirectional').length;
+  const linked = state.connections.filter((c) => c.fromInstanceId === inst.instanceId || c.toInstanceId === inst.instanceId);
+  metricRow(sys, 'Inputs', String(inputs));
+  metricRow(sys, 'Outputs', String(outputs));
+  metricRow(sys, 'Connections', String(linked.length));
+
+  if (state.lastSystemError) {
+    const err = document.createElement('div');
+    err.className = 'badge-note';
+    err.style.color = 'var(--danger)';
+    err.textContent = state.lastSystemError;
+    sys.appendChild(err);
+  }
+  if (state.systemConnectFrom) {
+    const fromEq = state.equipment.find((e) => e.instanceId === state.systemConnectFrom!.instanceId);
+    const banner = document.createElement('div');
+    banner.className = 'badge-note';
+    banner.textContent = `Connecting from ${fromEq?.name ?? 'device'}… select a compatible port, or cancel.`;
+    const cancel = document.createElement('button');
+    cancel.className = 'btn';
+    cancel.textContent = 'Cancel connect';
+    cancel.onclick = () => state.setSystemConnectFrom(null);
+    sys.append(banner, cancel);
+  }
 
   if (state.racks.length) {
     const rackSel = document.createElement('select');
@@ -662,154 +768,213 @@ function renderEquipmentInspector(body: HTMLElement, state: AppState, instanceId
     const wrap = document.createElement('div');
     wrap.className = 'field';
     const lab = document.createElement('label');
-    lab.textContent = 'Assign to AV rack';
+    lab.textContent = 'Rack';
     wrap.append(lab, rackSel);
-    body.appendChild(wrap);
+    sys.appendChild(wrap);
     if (inst.rackId) {
-      metricRow(body, 'Rack position', inst.rackPositionRU != null ? `U${inst.rackPositionRU}` : '—');
-      metricRow(body, 'Rack units', inst.rackUnits != null ? `${inst.rackUnits} RU` : product.rackUnits != null ? `${product.rackUnits} RU (catalog)` : 'DATA INCOMPLETE');
+      numField(sys, 'Position (RU)', inst.rackPositionRU ?? 1, 1, (v) =>
+        state.updateEquipment(instanceId, { rackPositionRU: Math.max(1, Math.round(v)) })
+      );
+      if (product.rackUnits != null) {
+        metricRow(sys, 'Size', `${product.rackUnits} RU`);
+      } else {
+        numField(sys, 'Size (RU)', inst.rackUnits ?? 0, 1, (v) => {
+          const n = Math.round(v);
+          state.updateEquipment(instanceId, { rackUnits: n > 0 ? n : undefined });
+        });
+        if (inst.rackUnits == null) metricRow(sys, 'Size', NOT_SPECIFIED);
+      }
     }
   }
 
-  const origin = inst.origin === 'auto' && inst.placementMode !== 'manual' ? 'AUTO' : inst.placementMode === 'manual' || inst.origin === 'manual' ? 'MANUAL OVERRIDE' : inst.placementMode === 'smart' ? 'SMART' : '';
-  if (origin) {
-    const originNote = document.createElement('div');
-    originNote.className = 'badge-note';
-    originNote.style.color = origin === 'MANUAL OVERRIDE' ? 'var(--warning)' : 'var(--success)';
-    originNote.textContent =
-      origin === 'AUTO'
-        ? 'Placement: AUTO — generated starting position. Analysis uses this geometry.'
-        : origin === 'SMART'
-          ? 'Placement: SMART — catalog suggestion engine. Analysis uses this geometry.'
-          : 'Placement: MANUAL OVERRIDE — analysis uses this position. Auto Design will not move it silently.';
-    body.appendChild(originNote);
-  }
-
-  if (inst.placementMode === 'manual' && origin !== 'MANUAL OVERRIDE') {
-    const manualNote = document.createElement('div');
-    manualNote.className = 'badge-note';
-    manualNote.style.color = 'var(--warning)';
-    manualNote.textContent = 'Placement: MANUAL — analysis uses this position. Invalid engineering states are not implied.';
-    body.appendChild(manualNote);
-  }
-
-  const snapBtn = document.createElement('button');
-  snapBtn.className = 'btn';
-  snapBtn.textContent = 'Snap to valid surface';
-  snapBtn.onclick = () => {
-    if (!state.room) return;
-    const snapped = snapEquipment(state.room, product, inst.position, inst.rotationY);
-    state.updateEquipment(instanceId, {
-      position: snapped.position,
-      rotationY: snapped.rotationY,
-      wall: snapped.wall,
-      placementMode: 'manual'
-    });
-    state.setSnapNote(snapped.note);
-  };
-  body.appendChild(snapBtn);
-
-  const delBtn = document.createElement('button');
-  delBtn.className = 'btn';
-  delBtn.textContent = 'Remove';
-  delBtn.onclick = () => state.removeEquipment(inst.instanceId);
-  body.appendChild(delBtn);
-
-  const ports = resolveInstancePorts(inst.instanceId, inst.productId, catalog);
-  const portTitle = document.createElement('div');
-  portTitle.className = 'nav-section-title';
-  portTitle.textContent = 'PORTS';
-  body.appendChild(portTitle);
   if (!ports.length) {
     const miss = document.createElement('div');
     miss.className = 'badge-note';
     miss.style.color = 'var(--warning)';
     miss.textContent = 'DATA INCOMPLETE — no catalog ports. System connections cannot be drawn.';
-    body.appendChild(miss);
+    sys.appendChild(miss);
   } else {
+    const connHead = document.createElement('div');
+    connHead.className = 'nav-section-title';
+    connHead.textContent = 'CONNECTIONS';
+    sys.appendChild(connHead);
+    const others = state.equipment.flatMap((e) =>
+      e.instanceId === inst.instanceId ? [] : resolveInstancePorts(e.instanceId, e.productId, catalog)
+    );
+    const connectFromEq = state.systemConnectFrom
+      ? state.equipment.find((e) => e.instanceId === state.systemConnectFrom!.instanceId)
+      : undefined;
+    const connectFrom = connectFromEq
+      ? resolveInstancePorts(connectFromEq.instanceId, connectFromEq.productId, catalog).find(
+          (p) => p.id === state.systemConnectFrom!.portId
+        )
+      : undefined;
     ports.forEach((p) => {
-      const used = state.connections.some(
+      const occ = portOccupancyState(p, state.connections);
+      const role = portConnectionRole(p);
+      const link = state.connections.find(
         (c) =>
           (c.fromInstanceId === inst.instanceId && c.fromPortId === p.id) ||
           (c.toInstanceId === inst.instanceId && c.toPortId === p.id)
       );
+      let partner = 'Available';
+      if (link) {
+        const otherId = link.fromInstanceId === inst.instanceId ? link.toInstanceId : link.fromInstanceId;
+        const otherPortId = link.fromInstanceId === inst.instanceId ? link.toPortId : link.fromPortId;
+        const other = state.equipment.find((e) => e.instanceId === otherId);
+        const otherPort = other
+          ? resolveInstancePorts(other.instanceId, other.productId, catalog).find((x) => x.id === otherPortId)
+          : undefined;
+        partner = `← ${other?.name ?? otherId} ${otherPort?.label ?? otherPortId}`;
+      }
+      const mark = occ === 'connected' ? '✓' : role === 'required' ? '○' : '○';
+      const hint =
+        connectFrom && connectFrom.instanceId !== p.instanceId
+          ? canConnectPorts(connectFrom, p).ok || canConnectPorts(p, connectFrom).ok
+            ? ' ✓ compatible'
+            : ' ✕ incompatible'
+          : '';
       metricRow(
-        body,
+        sys,
         p.label,
         state.systemDetailMode === 'pro'
-          ? `${p.direction} · ${p.signalTypes.join('/')} · ${p.connector}${used ? ' · CONNECTED' : ' · FREE'}`
-          : used
-            ? '✓ Connected'
-            : 'Available'
+          ? `${mark} ${partner} · ${p.direction} · ${p.signalTypes.join('/')} · ${p.connector} · ${role}${hint}`
+          : `${mark} ${partner}${hint}`
       );
-      if (used) return;
-      const others = state.equipment.flatMap((e) =>
-        e.instanceId === inst.instanceId ? [] : resolveInstancePorts(e.instanceId, e.productId, catalog)
-      );
-      const partners =
-        p.direction === 'input' ? compatibleSources(p, others, state.connections) : compatibleDestinations(p, others, state.connections);
-      if (!partners.length) return;
-      const wrap = document.createElement('div');
-      wrap.className = 'field';
-      const sel = document.createElement('select');
-      const ph = document.createElement('option');
-      ph.value = '';
-      ph.textContent = p.direction === 'input' ? `Connect source to ${p.label}…` : `Connect ${p.label} to…`;
-      sel.appendChild(ph);
-      partners.forEach((d) => {
-        const eq = state.equipment.find((e) => e.instanceId === d.instanceId);
-        const o = document.createElement('option');
-        o.value = `${d.instanceId}::${d.id}`;
-        o.textContent = `${eq?.name ?? d.instanceId} · ${d.label}`;
-        sel.appendChild(o);
-      });
-      sel.onchange = () => {
-        const [otherId, otherPort] = sel.value.split('::');
-        if (!otherId || !otherPort) return;
-        if (p.direction === 'input') state.addConnection(otherId, otherPort, p.instanceId, p.id);
-        else state.addConnection(p.instanceId, p.id, otherId, otherPort);
-      };
-      wrap.appendChild(sel);
-      body.appendChild(wrap);
+      const actions = document.createElement('div');
+      actions.style.display = 'flex';
+      actions.style.gap = '6px';
+      actions.style.flexWrap = 'wrap';
+      if (link) {
+        const disc = document.createElement('button');
+        disc.className = 'btn';
+        disc.textContent = 'Disconnect';
+        disc.onclick = () => state.removeConnection(link.id);
+        const show = document.createElement('button');
+        show.className = 'btn';
+        show.textContent = 'Show route';
+        show.onclick = () => state.showConnectionRoute(link.id);
+        actions.append(disc, show);
+      } else {
+        const connectBtn = document.createElement('button');
+        connectBtn.className = 'btn primary';
+        connectBtn.textContent = 'Connect';
+        connectBtn.onclick = () => {
+          if (state.systemConnectFrom && state.systemConnectFrom.instanceId !== p.instanceId) {
+            const from = state.systemConnectFrom;
+            const a = canConnectPorts(
+              resolveInstancePorts(
+                from.instanceId,
+                state.equipment.find((e) => e.instanceId === from.instanceId)!.productId,
+                catalog
+              ).find((x) => x.id === from.portId)!,
+              p
+            );
+            if (a.ok) state.addConnection(from.instanceId, from.portId, p.instanceId, p.id);
+            else state.addConnection(p.instanceId, p.id, from.instanceId, from.portId);
+            return;
+          }
+          state.setSystemConnectFrom({ instanceId: p.instanceId, portId: p.id });
+        };
+        actions.appendChild(connectBtn);
+        const partners =
+          p.direction === 'input' ? compatibleSources(p, others, state.connections) : compatibleDestinations(p, others, state.connections);
+        if (partners.length) {
+          const wrap = document.createElement('div');
+          wrap.className = 'field';
+          const sel = document.createElement('select');
+          const ph = document.createElement('option');
+          ph.value = '';
+          ph.textContent = p.direction === 'input' ? `Connect source to ${p.label}…` : `Connect ${p.label} to…`;
+          sel.appendChild(ph);
+          partners.forEach((d) => {
+            const eq = state.equipment.find((e) => e.instanceId === d.instanceId);
+            const o = document.createElement('option');
+            o.value = `${d.instanceId}::${d.id}`;
+            o.textContent = `${eq?.name ?? d.instanceId} · ${d.label}`;
+            sel.appendChild(o);
+          });
+          sel.onchange = () => {
+            const [otherId, otherPort] = sel.value.split('::');
+            if (!otherId || !otherPort) return;
+            if (p.direction === 'input') state.addConnection(otherId, otherPort, p.instanceId, p.id);
+            else state.addConnection(p.instanceId, p.id, otherId, otherPort);
+          };
+          wrap.appendChild(sel);
+          actions.appendChild(wrap);
+        }
+      }
+      sys.appendChild(actions);
     });
   }
-  const linked = state.connections.filter((c) => c.fromInstanceId === inst.instanceId || c.toInstanceId === inst.instanceId);
   if (linked.length) {
-    const cxTitle = document.createElement('div');
-    cxTitle.className = 'nav-section-title';
-    cxTitle.textContent = 'CONNECTIONS';
-    body.appendChild(cxTitle);
-    linked.forEach((c) => {
-      const row = document.createElement('div');
-      row.className = 'metric-row';
-      row.innerHTML = `<span class="label">${c.physicalMedium}</span><span class="value">${c.signalType}</span>`;
-      const rm = document.createElement('button');
-      rm.className = 'btn';
-      rm.textContent = 'Disconnect';
-      rm.onclick = () => state.removeConnection(c.id);
-      row.appendChild(rm);
-      body.appendChild(row);
+    const flowHead = document.createElement('div');
+    flowHead.className = 'nav-section-title';
+    flowHead.textContent = 'SIGNAL FLOW';
+    sys.appendChild(flowHead);
+    deviceSignalFlowLines(inst.instanceId, state.equipment, state.connections, catalog, state.routes).forEach((line) => {
+      const note = document.createElement('div');
+      note.className = 'badge-note';
+      note.textContent = line;
+      sys.appendChild(note);
     });
+    const showAll = document.createElement('button');
+    showAll.className = 'btn';
+    showAll.textContent = state.showCableRoutes ? 'Hide all cable routes' : 'Show cable routes in room';
+    showAll.onclick = () => state.setShowCableRoutes(!state.showCableRoutes);
+    sys.appendChild(showAll);
   }
 
-  renderRoutingMatrix(body, state, inst.instanceId);
+  renderRoutingMatrix(sys, state, inst.instanceId);
 
   const paths = enumerateSignalPaths(state.equipment, state.connections, catalog, state.routes).filter((p) =>
     p.hops.some((h) => h.instanceId === inst.instanceId)
   );
   if (paths.length) {
-    const pt = document.createElement('div');
-    pt.className = 'nav-section-title';
-    pt.textContent = 'SIGNAL PATHS';
-    body.appendChild(pt);
     paths.slice(0, 4).forEach((p) => {
       const box = document.createElement('div');
       box.className = 'badge-note';
       const rows = describePath(p, state.equipment, state.connections);
-      box.innerHTML = `<b>${p.signalType}</b> ${p.complete ? '✓ Complete' : '✕ Broken'}<br>` +
+      box.innerHTML =
+        `<b>${p.signalType}</b> ${p.complete ? '✓ Complete' : '✕ Broken'}<br>` +
         rows.map((r) => (r.kind === 'cable' ? `&nbsp;&nbsp;↓ ${r.text}` : r.text)).join('<br>');
       if (!p.complete && p.breakReason) box.innerHTML += `<br>${p.breakReason}`;
-      body.appendChild(box);
+      sys.appendChild(box);
+    });
+  }
+
+  const analysis = section(body, 'ANALYSIS', true);
+  if (['display', 'camera', 'speaker', 'microphone'].includes(product.category)) {
+    const analyze = document.createElement('button');
+    analyze.className = 'btn primary';
+    analyze.textContent = 'Analyze';
+    analyze.onclick = () => state.analyzeEquipment(instanceId);
+    analysis.appendChild(analyze);
+    metricRow(analysis, 'Model', analysisSupportLine(product));
+  }
+  if (product.category === 'display') {
+    renderDisplayAnalysisControls(analysis, state);
+  }
+  if (product.category === 'microphone') {
+    renderMicAnalysisControls(analysis, state);
+  }
+  if (product.category === 'speaker') {
+    renderAudioAnalysisControls(analysis, state);
+  }
+  if (product.category === 'camera') {
+    renderCameraAnalysisControls(analysis, state);
+  }
+
+  const val = section(body, 'VALIDATION', true);
+  const findings = validationReportFor(state).findings.filter(
+    (f) => f.objectId === instanceId || f.affectedObjects.some((o) => o.id === instanceId) || f.code.startsWith('EQUIP')
+  );
+  if (!findings.length) {
+    metricRow(val, 'Status', '✓ No equipment findings', statusPill('pass'));
+  } else {
+    findings.slice(0, 8).forEach((f) => {
+      const sev = f.severity === 'error' ? 'fail' : f.severity === 'warning' ? 'warning' : f.severity === 'info' ? 'info' : 'pass';
+      metricRow(val, f.code, f.title, statusPill(sev));
     });
   }
 
@@ -821,18 +986,11 @@ function renderEquipmentInspector(body: HTMLElement, state: AppState, instanceId
     body.appendChild(roomBtn);
   }
 
-  if (product.category === 'display') {
-    renderDisplayAnalysisControls(body, state);
-  }
-  if (product.category === 'microphone') {
-    renderMicAnalysisControls(body, state);
-  }
-  if (product.category === 'speaker') {
-    renderAudioAnalysisControls(body, state);
-  }
-  if (product.category === 'camera') {
-    renderCameraAnalysisControls(body, state);
-  }
+  const delBtn = document.createElement('button');
+  delBtn.className = 'btn';
+  delBtn.textContent = 'Remove';
+  delBtn.onclick = () => state.removeEquipment(inst.instanceId);
+  body.appendChild(delBtn);
 }
 
 function appendCatalogLink(body: HTMLElement, state: AppState): void {
@@ -863,8 +1021,28 @@ function renderConnectionInspector(body: HTMLElement, state: AppState, id: strin
   metricRow(
     body,
     'Status',
-    route.status === 'clear' ? '✓ Valid · route clear' : route.status === 'intersects-obstacle' ? '⚠ Route intersects obstacle' : 'No room geometry'
+    route.status === 'clear'
+      ? '✓ Connected · route clear'
+      : route.status === 'intersects-obstacle'
+        ? '⚠ Compatible but route intersects obstacle'
+        : '○ Route estimate without room geometry'
   );
+  const cableSel = document.createElement('select');
+  const media = ['HDMI', 'DisplayPort', 'USB', 'USB-C', 'Cat6', 'Cat6A', 'Audio', 'Speaker', 'XLR', 'TRS', 'Fiber', 'Control'] as const;
+  media.forEach((m) => {
+    const o = document.createElement('option');
+    o.value = m;
+    o.textContent = m;
+    if (cableTypeOf(c) === m) o.selected = true;
+    cableSel.appendChild(o);
+  });
+  cableSel.onchange = () => state.updateConnectionCableType(c.id, cableSel.value as typeof media[number]);
+  const cableWrap = document.createElement('div');
+  cableWrap.className = 'field';
+  const cableLab = document.createElement('label');
+  cableLab.textContent = 'Cable type';
+  cableWrap.append(cableLab, cableSel);
+  body.appendChild(cableWrap);
   const srcBtn = document.createElement('button');
   srcBtn.className = 'btn';
   srcBtn.textContent = 'Focus Source';

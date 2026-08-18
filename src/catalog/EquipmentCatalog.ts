@@ -129,6 +129,9 @@ export interface MountingSpec {
   wall: boolean;
   floor: boolean;
   ceiling: boolean;
+  table?: boolean;
+  rack?: boolean;
+  freestanding?: boolean;
   vesa?: string;
 }
 
@@ -145,6 +148,9 @@ export interface EquipmentProduct {
   model: string;
   category: EquipmentCategory;
   type: string;
+  /** Optional identity copy. Omit rather than invent marketing text. */
+  description?: string;
+  family?: string;
   physical: PhysicalSpec;
   display?: DisplaySpec;
   speaker?: SpeakerSpec;
@@ -184,6 +190,8 @@ export interface EquipmentInstance {
   rackPositionRU?: number;
   /** Consumed RU. Only when catalog or user provides it — never invented. */
   rackUnits?: number;
+  /** Project mounting, when the catalog allows more than one. */
+  mountingKind?: 'wall' | 'ceiling' | 'floor' | 'table' | 'rack' | 'freestanding';
 }
 
 export class EquipmentCatalog {
@@ -215,7 +223,7 @@ export class EquipmentCatalog {
       if (query.manufacturer && p.manufacturer !== query.manufacturer) return false;
       if (query.text) {
         const q = query.text.toLowerCase();
-        const hay = `${p.manufacturer} ${p.model} ${p.type}`.toLowerCase();
+        const hay = `${p.id} ${p.manufacturer} ${p.model} ${p.type} ${p.category} ${p.family ?? ''} ${p.description ?? ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;

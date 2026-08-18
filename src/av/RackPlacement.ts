@@ -4,6 +4,7 @@
 
 import type { RoomModel } from '../room/RoomModel';
 import { getPresentationWall, type WallKey } from '../room/RoomGeometry';
+import { primaryDoorWall } from './placement/PlacementCandidateEngine';
 import { aabbsOverlap, openingExclusionAabb, type Aabb } from '../room/FurnitureGeometry';
 import { defaultFloorRack, rackFootprint, rackServiceAabb, type AVRack } from './AVRack';
 
@@ -28,7 +29,11 @@ export function placeAvRack(
       ? { ...defaultFloorRack(), kind: 'wall' as const, ruTotal: 12, depth: 0.45, height: 0.65, y: 1.2, frontClearance: 0.9, rearClearance: 0.05 }
       : { ...defaultFloorRack(), rearClearance: 0.1 };
   const present = getPresentationWall(room);
+  const doorWall = primaryDoorWall(room);
   const walls: WallKey[] = [OPPOSITE[present], present === 'front' || present === 'back' ? 'left' : 'back', present === 'front' || present === 'back' ? 'right' : 'front'];
+  if (doorWall) {
+    walls.sort((a, b) => Number(a === doorWall) - Number(b === doorWall));
+  }
   const openings = room.openings.map((o) => openingExclusionAabb(room, o.wall, o.offset, o.width));
   const alongChoices = (wall: WallKey) => {
     const span = wall === 'front' || wall === 'back' ? room.width : room.depth;
@@ -48,7 +53,7 @@ export function placeAvRack(
         service.maxX <= room.width / 2 - 0.02 &&
         service.minZ >= -room.depth / 2 + 0.02 &&
         service.maxZ <= room.depth / 2 - 0.02;
-      const hitOpen = openings.some((o) => aabbsOverlap(foot, o, 0.05));
+      const hitOpen = openings.some((o) => aabbsOverlap(foot, o, 0.05) || aabbsOverlap(service, o, 0.05));
       const hitFurn = furniture.some((f) => aabbsOverlap(service, f, 0.05));
       if (inside && !hitOpen && !hitFurn) {
         return {

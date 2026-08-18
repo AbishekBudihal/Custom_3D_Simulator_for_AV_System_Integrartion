@@ -12,7 +12,15 @@
 import type { RoomModel } from '../room/RoomModel';
 import { defaultSeatingConfig, generateSeating, type Seat, type SeatingLayout, type TableSpec } from '../room/SeatingGenerator';
 import { clampTableCenter } from '../room/FurnitureGeometry';
-import { rotateTableSpec90, seatsAroundConferenceTable } from '../room/FurnitureRelayout';
+import { rotateTableSpec90 } from '../room/FurnitureRelayout';
+import {
+  applyPresetToTable,
+  clampTableSpecSizes,
+  relayoutSeatsForTable,
+  seatsOwnedByTable,
+  translateSeatsForTable,
+  type TablePresetId
+} from '../room/ParametricTable';
 import type { AVRack } from '../av/AVRack';
 import { usedRackUnits } from '../av/AVRack';
 import { snapSeatPosition } from '../interaction/SnapEngine';
@@ -25,7 +33,7 @@ import { loadDefaultCatalog } from '../catalog/loadCatalog';
 import type { SystemConnection, SystemGroup, SystemRoute, SignalType, PhysicalMedium } from '../system/SystemTypes';
 import { computeAutoLayout } from '../system/SystemLayout';
 import { isRoutableProduct } from '../system/SystemRouting';
-import { canConnectPorts, duplicateConnection, occupancyConflict } from '../system/PortCompatibility';
+import { canConnectPorts, canConnectWithCable, duplicateConnection, occupancyConflict, maxConnectionsFor } from '../system/PortCompatibility';
 import { resolveInstancePorts } from '../system/PortResolver';
 import { connectionsTouching, invalidateCableRoutes } from '../system/CableRouter';
 import { defaultQuickRequirements, type AutoDesignMode, type DesignRequirements, type DesignUseCase } from '../autodesign/DesignRequirements';
@@ -457,13 +465,14 @@ export class AppState {
     this.equipment = this.equipment.filter((e) => e.instanceId !== id);
     this.connections = this.connections.filter((c) => c.fromInstanceId !== id && c.toInstanceId !== id);
     this.routes = this.routes.filter((r) => r.instanceId !== id);
+    invalidateCableRoutes();
     if (this.selection.id === id) this.selection = { kind: 'none', id: null };
     this.notify();
   }
 
   updateEquipment(
     id: string,
-    patch: Partial<Pick<EquipmentInstance, 'position' | 'rotationY' | 'wall' | 'placementMode' | 'name' | 'origin' | 'rackId' | 'rackPositionRU' | 'rackUnits'>>,
+    patch: Partial<Pick<EquipmentInstance, 'position' | 'rotationY' | 'wall' | 'placementMode' | 'name' | 'origin' | 'rackId' | 'rackPositionRU' | 'rackUnits' | 'mountingKind'>>,
     options: { recordHistory?: boolean } = {}
   ): void {
     if (options.recordHistory !== false) this.recordAndReset();
@@ -492,14 +501,20 @@ export class AppState {
 
   updateTable(
     id: string,
-    patch: Partial<Pick<TableSpec, 'centerX' | 'centerZ' | 'sizeX' | 'sizeZ' | 'height' | 'thickness' | 'hasCableWell' | 'furnitureId'>>,
-    options: { recordHistory?: boolean } = {}
+    patch: Partial<
+      Pick<TableSpec, 'centerX' | 'centerZ' | 'sizeX' | 'sizeZ' | 'height' | 'thickness' | 'hasCableWell' | 'furnitureId' | 'shape' | 'presetId'>
+    >,
+    options: { recordHistory?: boolean; requestedSeats?: number } = {}
   ): void {
     if (options.recordHistory !== false) this.recordAndReset();
     const idx = this.tables.findIndex((t) => t.id === id);
     if (idx === -1) return;
     const prev = this.tables[idx];
-    const next = { ...prev, ...patch };
+    const sized = clampTableSpecSizes(patch);
+    const next: TableSpec = { ...prev, ...patch, ...sized };
+    if (sized.sizeX != null || sized.sizeZ != null || patch.shape != null) {
+      next.presetId = patch.presetId ?? 'custom';
+    }
     if (this.room) {
       const snapped = snapSeatPosition(next.centerX, next.centerZ, 0.05);
       const clamped = clampTableCenter(this.room, next, snapped.x, snapped.z);
@@ -509,15 +524,53 @@ export class AppState {
     const dx = next.centerX - prev.centerX;
     const dz = next.centerZ - prev.centerZ;
     const resized =
-      (patch.sizeX != null && patch.sizeX !== prev.sizeX) || (patch.sizeZ != null && patch.sizeZ !== prev.sizeZ);
+      next.sizeX !== prev.sizeX ||
+      next.sizeZ !== prev.sizeZ ||
+      next.shape !== prev.shape ||
+      next.furnitureId !== prev.furnitureId;
     this.tables = [...this.tables.slice(0, idx), next, ...this.tables.slice(idx + 1)];
-    if (resized && this.tables.length === 1) {
-      this.seats = seatsAroundConferenceTable(next, this.seats.length || 8);
-    } else if (!resized && (dx !== 0 || dz !== 0) && this.tables.length === 1) {
-      this.seats = this.seats.map((s) => ({ ...s, x: s.x + dx, z: s.z + dz }));
+    if (resized || options.requestedSeats != null) {
+      const layout = relayoutSeatsForTable(next, this.seats, this.tables, options.requestedSeats);
+      this.seats = layout.seats;
+      this.lastSnapNote = layout.warning ?? '';
+      const withDemand: TableSpec = {
+        ...next,
+        requestedSeats: layout.requested > layout.practical ? layout.requested : undefined
+      };
+      this.tables = [...this.tables.slice(0, idx), withDemand, ...this.tables.slice(idx + 1)];
+    } else if (dx !== 0 || dz !== 0) {
+      const owned = seatsOwnedByTable(next, this.seats, this.tables.length);
+      if (owned.length && owned.every((s) => s.tableId === next.id)) {
+        this.seats = translateSeatsForTable(next.id, this.seats, dx, dz);
+      } else if (this.tables.length === 1) {
+        this.seats = this.seats.map((s) => ({ ...s, x: s.x + dx, z: s.z + dz }));
+      } else {
+        this.seats = translateSeatsForTable(next.id, this.seats, dx, dz);
+      }
     }
     invalidateCableRoutes();
     this.notify();
+  }
+
+  applyTablePreset(tableId: string, presetId: TablePresetId): void {
+    const table = this.tables.find((t) => t.id === tableId);
+    if (!table) return;
+    const next = applyPresetToTable(table, presetId);
+    this.updateTable(tableId, {
+      sizeX: next.sizeX,
+      sizeZ: next.sizeZ,
+      height: next.height,
+      shape: next.shape,
+      furnitureId: next.furnitureId,
+      hasCableWell: next.hasCableWell,
+      presetId: next.presetId
+    });
+  }
+
+  setTableSeatCount(tableId: string, count: number): void {
+    const table = this.tables.find((t) => t.id === tableId);
+    if (!table) return;
+    this.updateTable(tableId, {}, { requestedSeats: count });
   }
 
   rotateSelectedTable90(): void {
@@ -1090,7 +1143,7 @@ export class AppState {
       this.micAnalysis = { ...this.micAnalysis, heatmap: false };
       this.audioAnalysis = { ...this.audioAnalysis, heatmap: false };
       this.cameraAnalysis = { ...this.cameraAnalysis, heatmap: false };
-      if ((code ?? id).startsWith('CABLE')) {
+      if ((code ?? id).startsWith('CABLE') || (code ?? id).startsWith('CONN-008')) {
         this.systemPhysicalView = true;
         this.showCableRoutes = true;
         this.viewMode = '3d';
@@ -1187,7 +1240,10 @@ export class AppState {
       this.notify();
       return false;
     }
-    const busy = occupancyConflict(this.connections, fromInstanceId, fromPortId, toInstanceId, toPortId);
+    const busy = occupancyConflict(this.connections, fromInstanceId, fromPortId, toInstanceId, toPortId, {
+      fromMax: maxConnectionsFor(from),
+      toMax: maxConnectionsFor(to)
+    });
     if (busy) {
       this.lastSystemError = busy;
       this.notify();
@@ -1211,6 +1267,28 @@ export class AppState {
     this.lastSystemError = '';
     this.systemConnectFrom = null;
     invalidateCableRoutes([this.connections[this.connections.length - 1]!.id]);
+    this.notify();
+    return true;
+  }
+
+  updateConnectionCableType(id: string, cableType: PhysicalMedium): boolean {
+    const c = this.connections.find((x) => x.id === id);
+    if (!c) return false;
+    const fromEq = this.equipment.find((e) => e.instanceId === c.fromInstanceId);
+    const toEq = this.equipment.find((e) => e.instanceId === c.toInstanceId);
+    if (!fromEq || !toEq) return false;
+    const from = resolveInstancePorts(fromEq.instanceId, fromEq.productId, catalog).find((p) => p.id === c.fromPortId);
+    const to = resolveInstancePorts(toEq.instanceId, toEq.productId, catalog).find((p) => p.id === c.toPortId);
+    if (!from || !to) return false;
+    const r = canConnectWithCable(from, to, cableType);
+    if (!r.ok) {
+      this.lastSystemError = r.reason;
+      this.notify();
+      return false;
+    }
+    this.recordAndReset();
+    this.connections = this.connections.map((x) => (x.id === id ? { ...x, cableType } : x));
+    this.lastSystemError = '';
     this.notify();
     return true;
   }

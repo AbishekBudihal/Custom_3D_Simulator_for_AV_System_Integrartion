@@ -54,6 +54,9 @@ export type PhysicalMedium =
   | 'Control'
   | 'Power';
 
+export type PortConnectionState = 'available' | 'connected' | 'reserved' | 'invalid';
+export type ConnectionImportance = 'required' | 'optional' | 'recommended';
+
 export interface PortDefinition {
   id: string;
   label: string;
@@ -62,6 +65,10 @@ export interface PortDefinition {
   connector: ConnectorId;
   transport?: TransportId;
   required?: boolean;
+  /** Catalog-only. Defaults to optional when omitted. */
+  connectionImportance?: ConnectionImportance;
+  /** Defaults to 1. Multi-drop only when the catalog declares it. */
+  maxConnections?: number;
   /** Catalog note, e.g. PoE. Never invent electrical ratings. */
   capabilities?: string[];
 }
@@ -93,7 +100,7 @@ export interface CableRoute {
 
 export interface SystemConnection {
   id: string;
-  /** Source device. Alias of the engineering graph endpoint. */
+  /** Source device (authoritative). */
   fromInstanceId: string;
   fromPortId: string;
   toInstanceId: string;
@@ -116,10 +123,22 @@ export type CompatibilityOk = {
   physicalMedium: PhysicalMedium;
 };
 
+export type CompatibilityFailCode =
+  | 'CONN-001'
+  | 'CONN-002'
+  | 'CONN-003'
+  | 'CONN-004'
+  | 'CONN-007'
+  | 'SIGNAL-002'
+  | 'SIGNAL-003'
+  | 'SIGNAL-004'
+  | 'SIGNAL-005'
+  | 'SIGNAL-006';
+
 export type CompatibilityFail = {
   ok: false;
   reason: string;
-  code: 'SIGNAL-002' | 'SIGNAL-003' | 'SIGNAL-004' | 'SIGNAL-005' | 'SIGNAL-006';
+  code: CompatibilityFailCode;
 };
 
 export type CompatibilityResult = CompatibilityOk | CompatibilityFail;

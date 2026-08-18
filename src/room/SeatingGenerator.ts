@@ -92,6 +92,10 @@ export interface TableSpec {
   furnitureId?: string;
   hasCableWell?: boolean;
   zoneId?: string;
+  /** Last applied dimension preset, or custom after a manual size edit. */
+  presetId?: string;
+  /** Requested occupant count when it exceeds practical capacity (warning only). */
+  requestedSeats?: number;
 }
 
 export interface SeatingGenerationResult {
@@ -275,28 +279,30 @@ function generateUShape(room: RoomModel, cfg: SeatingConfig): SeatingGenerationR
 
   for (let i = 0; i < perSide && placed < cfg.capacity; i++) {
     const z = startZ + i * spacing;
-    const l: Seat = {
-      id: `UL${i + 1}`,
-      row: 1,
-      indexInRow: i + 1,
-      x: leftTableX - depth / 2 - tmpl.chairFromEdge,
-      z,
-      facing: -Math.PI / 2,
-      hasTable: true
-    };
+      const l: Seat = {
+        id: `UL${i + 1}`,
+        row: 1,
+        indexInRow: i + 1,
+        x: leftTableX - depth / 2 - tmpl.chairFromEdge,
+        z,
+        facing: -Math.PI / 2,
+        hasTable: true,
+        tableId: 'u-left'
+      };
     seats.push(l);
     leftSeats.push(l);
     placed++;
     if (placed >= cfg.capacity) break;
-    const r: Seat = {
-      id: `UR${i + 1}`,
-      row: 2,
-      indexInRow: i + 1,
-      x: rightTableX + depth / 2 + tmpl.chairFromEdge,
-      z,
-      facing: Math.PI / 2,
-      hasTable: true
-    };
+      const r: Seat = {
+        id: `UR${i + 1}`,
+        row: 2,
+        indexInRow: i + 1,
+        x: rightTableX + depth / 2 + tmpl.chairFromEdge,
+        z,
+        facing: Math.PI / 2,
+        hasTable: true,
+        tableId: 'u-right'
+      };
     seats.push(r);
     rightSeats.push(r);
     placed++;
@@ -305,15 +311,16 @@ function generateUShape(room: RoomModel, cfg: SeatingConfig): SeatingGenerationR
   const backSpan = Math.max(spacing, (backCount - 1) * spacing);
   for (let i = 0; i < backCount; i++) {
     const x = -backSpan / 2 + i * spacing;
-    const b: Seat = {
-      id: `UB${i + 1}`,
-      row: 3,
-      indexInRow: i + 1,
-      x,
-      z: backZ + depth / 2 + tmpl.chairFromEdge,
-      facing: 0,
-      hasTable: true
-    };
+      const b: Seat = {
+        id: `UB${i + 1}`,
+        row: 3,
+        indexInRow: i + 1,
+        x,
+        z: backZ + depth / 2 + tmpl.chairFromEdge,
+        facing: 0,
+        hasTable: true,
+        tableId: 'u-back'
+      };
     seats.push(b);
     backSeats.push(b);
     placed++;
@@ -370,7 +377,8 @@ function generateHollowSquare(room: RoomModel, cfg: SeatingConfig): SeatingGener
       x: -span / 2 + i * spacing,
       z: frontZ,
       facing: Math.PI,
-      hasTable: true
+      hasTable: true,
+      tableId: 'u-front'
     });
     placed++;
   }

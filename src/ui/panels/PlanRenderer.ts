@@ -40,6 +40,7 @@ import {
 } from '../../av/CameraAnalysis';
 import { cachedCableRoute } from '../../system/CableRouter';
 import { cableRouteContext } from '../../system/cableContext';
+import { isCableSelected, shouldDrawConnection, shouldShowCableRoutes } from '../../system/cableVisibility';
 
 const catalog = loadDefaultCatalog();
 const PX_PER_M = 46;
@@ -432,16 +433,21 @@ export function renderPlanView(container: HTMLElement, state: AppState): void {
     svg.appendChild(g);
   });
 
-  const showCables =
-    state.showCableRoutes || !!state.selectedConnectionId || (state.workspaceMode === 'system' && state.systemPhysicalView);
+  const showCables = shouldShowCableRoutes(state);
   if (showCables && state.connections.length) {
     const ctx = cableRouteContext(state, catalog);
+    const SIG_STROKE: Record<string, string> = {
+      VIDEO: '#6aa4e8',
+      AUDIO: '#6aae7a',
+      USB: '#c4a35a',
+      NETWORK: '#5aa88a',
+      CONTROL: '#a8a8a8'
+    };
     state.connections.forEach((c) => {
-      if (state.selectedConnectionId && c.id !== state.selectedConnectionId && !state.showCableRoutes && !state.systemPhysicalView) {
-        return;
-      }
+      if (!shouldDrawConnection(state, c)) return;
       const route = cachedCableRoute(c, ctx);
-      const sel = state.selectedConnectionId === c.id;
+      const sel = isCableSelected(state, c);
+      const stroke = sel ? '#2f8cff' : SIG_STROKE[c.signalType] ?? '#5aa88a';
       route.segments.forEach((s) => {
         const [x1, y1] = toPx(s.start.x, s.start.z);
         const [x2, y2] = toPx(s.end.x, s.end.z);
@@ -451,7 +457,7 @@ export function renderPlanView(container: HTMLElement, state: AppState): void {
             y1,
             x2,
             y2,
-            stroke: sel ? '#2f8cff' : '#5aa88a',
+            stroke,
             'stroke-width': sel ? 2.4 : 1.4,
             'stroke-opacity': sel ? 0.95 : 0.55,
             fill: 'none'
@@ -473,27 +479,58 @@ export function renderPlanView(container: HTMLElement, state: AppState): void {
     g.style.cursor = 'grab';
 
     let hitTarget: SVGGraphicsElement;
+    const wPx = Math.max(6, (product.physical.width || 0.12) * PX_PER_M);
+    const dPx = Math.max(6, (product.physical.depth || 0.12) * PX_PER_M);
     if (product.category === 'display') {
-      const widthPx = product.physical.width * PX_PER_M;
       hitTarget = svgEl('rect', {
-        x: px - widthPx / 2,
+        x: px - wPx / 2,
         y: pz - 4,
-        width: widthPx,
+        width: wPx,
         height: 8,
         fill: '#0d3a5c',
         stroke: isSelected ? '#2f8cff' : '#000',
         'stroke-width': isSelected ? 3 : 1
       });
-      g.appendChild(hitTarget);
-    } else {
-      hitTarget = svgEl('circle', {
-        r: 7, cx: px, cy: pz,
-        fill: product.category === 'speaker' ? '#232325' : product.category === 'microphone' ? '#d8d5cf' : '#8a8478',
+    } else if (product.category === 'camera') {
+      hitTarget = svgEl('polygon', {
+        points: `${px},${pz - 8} ${px + 7},${pz + 6} ${px - 7},${pz + 6}`,
+        fill: '#1c1c1e',
         stroke: isSelected ? '#2f8cff' : '#20222580',
         'stroke-width': isSelected ? 3 : 1
       });
-      g.appendChild(hitTarget);
+    } else if (product.category === 'speaker') {
+      hitTarget = svgEl('rect', {
+        x: px - wPx / 2,
+        y: pz - dPx / 2,
+        width: wPx,
+        height: dPx,
+        rx: 2,
+        fill: '#232325',
+        stroke: isSelected ? '#2f8cff' : '#20222580',
+        'stroke-width': isSelected ? 3 : 1
+      });
+    } else if (product.category === 'microphone') {
+      hitTarget = svgEl('ellipse', {
+        cx: px,
+        cy: pz,
+        rx: wPx / 2,
+        ry: dPx / 2,
+        fill: '#d8d5cf',
+        stroke: isSelected ? '#2f8cff' : '#20222580',
+        'stroke-width': isSelected ? 3 : 1
+      });
+    } else {
+      hitTarget = svgEl('rect', {
+        x: px - wPx / 2,
+        y: pz - dPx / 2,
+        width: wPx,
+        height: dPx,
+        fill: '#8a8478',
+        stroke: isSelected ? '#2f8cff' : '#20222580',
+        'stroke-width': isSelected ? 3 : 1
+      });
     }
+    g.appendChild(hitTarget);
 
     g.addEventListener('click', (e) => {
       e.stopPropagation();

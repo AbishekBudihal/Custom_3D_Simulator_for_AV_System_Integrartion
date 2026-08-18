@@ -61,7 +61,10 @@ function buildSpeaker(widthM: number, heightM: number, depthM: number, mount?: s
   } else {
     const box = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), speakerMat);
     box.castShadow = true;
-    g.add(box);
+    const horn = new THREE.Mesh(new THREE.CylinderGeometry(Math.min(w, h) * 0.18, Math.min(w, h) * 0.28, d * 0.35, 12), mountMat);
+    horn.rotation.x = Math.PI / 2;
+    horn.position.z = d / 2;
+    g.add(box, horn);
   }
   return g;
 }
@@ -94,7 +97,9 @@ function buildCamera(widthM: number, heightM: number, depthM: number): THREE.Gro
   lens.rotation.x = Math.PI / 2;
   lens.position.z = d / 2 + 0.01;
   body.castShadow = true;
-  g.add(body, lens);
+  const led = new THREE.Mesh(new THREE.BoxGeometry(Math.min(0.02, w * 0.12), Math.min(0.008, h * 0.12), 0.004), displayScreenMat);
+  led.position.set(0, h * 0.32, d / 2 + 0.002);
+  g.add(body, lens, led);
   return g;
 }
 
@@ -141,12 +146,17 @@ export function renderEquipment(
         break;
       default: {
         const g = new THREE.Group();
-        const box = new THREE.Mesh(
-          new THREE.BoxGeometry(product.physical.width || 0.3, product.physical.height || 0.3, product.physical.depth || 0.1),
-          genericMat
-        );
+        const w = product.physical.width || 0.3;
+        const h = product.physical.height || 0.044;
+        const d = product.physical.depth || 0.1;
+        const box = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), genericMat);
         box.castShadow = true;
         g.add(box);
+        if (product.rackUnits != null || product.category === 'dsp' || product.category === 'amplifier' || product.category === 'switcher') {
+          const face = new THREE.Mesh(new THREE.BoxGeometry(w * 0.92, h * 0.55, 0.008), mountMat);
+          face.position.z = d / 2 + 0.002;
+          g.add(face);
+        }
         mesh = g;
       }
     }

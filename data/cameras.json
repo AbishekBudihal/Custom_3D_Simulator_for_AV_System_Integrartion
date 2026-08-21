@@ -5,6 +5,7 @@
     "model": "UVC84",
     "category": "camera",
     "type": "ptz_camera",
+    "family": "UVC",
     "physical": { "width": 0.132, "height": 0.145, "depth": 0.138 },
     "camera": {
       "mount": "wall",
@@ -29,5 +30,157 @@
     "mounting": { "wall": true, "floor": false, "ceiling": false },
     "provenance": "user_defined",
     "source": "User-defined horizontal FOV only. Vertical FOV is not supplied and is not invented. Replace with datasheet HFOV (and VFOV if needed) before engineering sign-off. Not a manufacturer SKU."
+  },
+  {
+    "id": "yealink-uvc86",
+    "manufacturer": "Yealink",
+    "model": "UVC86",
+    "category": "camera",
+    "type": "ptz_camera",
+    "family": "UVC",
+    "description": "Yealink dual-eye 4K PTZ camera with 120° horizontal FOV in dual-lens mode.",
+    "physical": { "width": 0.140, "height": 0.062, "depth": 0.072 },
+    "camera": {
+      "mount": "wall",
+      "horizontalFovDeg": 120
+    },
+    "mounting": { "wall": true, "floor": false, "ceiling": false },
+    "ports": [
+      { "id": "usbc-out", "label": "USB-C", "direction": "output", "signalTypes": ["VIDEO", "AUDIO", "USB"], "connector": "usbc", "transport": "usb-c", "required": true },
+      { "id": "hdmi-out", "label": "HDMI OUT", "direction": "output", "signalTypes": ["VIDEO"], "connector": "hdmi", "transport": "hdmi", "required": false },
+      { "id": "net-1", "label": "NETWORK", "direction": "bidirectional", "signalTypes": ["NETWORK", "CONTROL"], "connector": "rj45", "transport": "ethernet", "required": false }
+    ],
+    "provenance": "estimated",
+    "source": "Yealink publishes 120° horizontal FOV for UVC86 dual-eye mode (single eye ~80° HFOV). VFOV is not listed here because the dual-eye composite VFOV differs from individual lenses. Verify against the current Yealink datasheet before sign-off."
+  },
+  {
+    "id": "logitech-rally-camera",
+    "manufacturer": "Logitech",
+    "model": "Rally Camera",
+    "category": "camera",
+    "type": "ptz_camera",
+    "description": "Logitech Rally PTZ camera. Published 90° diagonal FOV (15× zoom). HFOV is not claimed here because the manufacturer publishes diagonal only.",
+    "physical": { "width": 0.132, "height": 0.132, "depth": 0.136 },
+    "camera": {
+      "mount": "wall"
+    },
+    "mounting": { "wall": true, "floor": false, "ceiling": false },
+    "ports": [
+      { "id": "hdmi-out", "label": "HDMI OUT", "direction": "output", "signalTypes": ["VIDEO"], "connector": "hdmi", "transport": "hdmi", "required": false },
+      { "id": "usb-out", "label": "USB", "direction": "output", "signalTypes": ["VIDEO", "AUDIO", "USB"], "connector": "usbc", "transport": "usb-c", "required": true }
+    ],
+    "provenance": "estimated",
+    "source": "Logitech publishes 90° diagonal FOV for Rally Camera. Horizontal FOV is NOT specified here because the manufacturer figure is diagonal, not horizontal. Verify actual HFOV against Logitech's engineering documentation before sign-off."
+  },
+  {
+    "id": "ptzoptics-move4k",
+    "manufacturer": "PTZOptics",
+    "model": "Move 4K",
+    "category": "camera",
+    "type": "ptz_camera",
+    "description": "PTZOptics Move 4K PTZ camera with 20× optical zoom. HFOV at widest zoom published as approximately 70.6°.",
+    "physical": { "width": 0.158, "height": 0.183, "depth": 0.160 },
+    "camera": {
+      "mount": "wall",
+      "horizontalFovDeg": 70.6
+    },
+    "mounting": { "wall": true, "floor": false, "ceiling": true },
+    "ports": [
+      { "id": "hdmi-out", "label": "HDMI OUT", "direction": "output", "signalTypes": ["VIDEO"], "connector": "hdmi", "transport": "hdmi", "required": false },
+      { "id": "usb-out", "label": "USB", "direction": "output", "signalTypes": ["VIDEO", "AUDIO", "USB"], "connector": "usbc", "transport": "usb-c", "required": false },
+      { "id": "net-1", "label": "NETWORK", "direction": "bidirectional", "signalTypes": ["VIDEO", "NETWORK", "CONTROL"], "connector": "rj45", "transport": "ethernet", "required": false }
+    ],
+    "provenance": "estimated",
+    "source": "PTZOptics publishes per-zoom HFOV values; 70.6° is the widest setting. VFOV is not claimed here. Verify against the current PTZOptics datasheet before sign-off."
+  },
+  {
+    "id": "poly-eagleeye-directorii",
+    "manufacturer": "Poly",
+    "model": "EagleEye Director II",
+    "category": "camera",
+    "type": "tracking_camera",
+    "description": "Poly EagleEye Director II auto-tracking camera system. Published field of view is diagonal; HFOV is not claimed here.",
+    "physical": { "width": 0.310, "height": 0.070, "depth": 0.110 },
+    "camera": {
+      "mount": "wall"
+    },
+    "mounting": { "wall": true, "floor": false, "ceiling": false },
+    "ports": [
+      { "id": "hdmi-out", "label": "HDMI OUT", "direction": "output", "signalTypes": ["VIDEO"], "connector": "hdmi", "transport": "hdmi", "required": true },
+      { "id": "net-1", "label": "NETWORK", "direction": "bidirectional", "signalTypes": ["NETWORK", "CONTROL"], "connector": "rj45", "transport": "ethernet", "required": false }
+    ],
+    "provenance": "estimated",
+    "source": "Poly publishes FOV as diagonal. Horizontal FOV is NOT claimed here. Verify actual HFOV against Poly's engineering datasheet before sign-off."
+  },
+  {
+    "id": "aver-cam520pro2",
+    "manufacturer": "AVer",
+    "model": "CAM520 Pro2",
+    "category": "camera",
+    "type": "ptz_camera",
+    "description": "AVer CAM520 Pro2 conference PTZ camera with 18× total zoom. Published field of view is diagonal; HFOV is not claimed here.",
+    "physical": { "width": 0.143, "height": 0.156, "depth": 0.143 },
+    "camera": {
+      "mount": "wall"
+    },
+    "mounting": { "wall": true, "floor": false, "ceiling": true },
+    "ports": [
+      { "id": "hdmi-out", "label": "HDMI OUT", "direction": "output", "signalTypes": ["VIDEO"], "connector": "hdmi", "transport": "hdmi", "required": false },
+      { "id": "usb-out", "label": "USB", "direction": "output", "signalTypes": ["VIDEO", "AUDIO", "USB"], "connector": "usbc", "transport": "usb-c", "required": true },
+      { "id": "net-1", "label": "NETWORK", "direction": "bidirectional", "signalTypes": ["NETWORK", "CONTROL"], "connector": "rj45", "transport": "ethernet", "required": false }
+    ],
+    "provenance": "estimated",
+    "source": "AVer publishes FOV as diagonal (86.6° DFOV). Horizontal FOV is NOT claimed here. Verify actual HFOV against AVer's engineering datasheet before sign-off."
+  },
+  {
+    "id": "generic-ptz-camera",
+    "manufacturer": "Generic",
+    "model": "PTZ Camera",
+    "category": "camera",
+    "type": "ptz_camera",
+    "description": "Generic PTZ camera placeholder. FOV must be configured from manufacturer datasheet before engineering sign-off.",
+    "physical": { "width": 0.17, "height": 0.17, "depth": 0.16 },
+    "camera": { "mount": "wall" },
+    "mounting": { "wall": true, "floor": false, "ceiling": true },
+    "ports": [
+      { "id": "hdmi-out", "label": "HDMI OUT", "direction": "output", "signalTypes": ["VIDEO"], "connector": "hdmi", "transport": "hdmi", "required": false },
+      { "id": "net-1", "label": "NETWORK", "direction": "bidirectional", "signalTypes": ["NETWORK", "CONTROL"], "connector": "rj45", "transport": "ethernet", "required": false },
+      { "id": "usb-out", "label": "USB", "direction": "output", "signalTypes": ["VIDEO", "USB"], "connector": "usbc", "transport": "usb-c", "required": false }
+    ],
+    "provenance": "user_defined",
+    "source": "Generic PTZ camera placeholder. HFOV and VFOV are not specified — configure from the actual product datasheet. Ports are representative; verify against actual hardware."
+  },
+  {
+    "id": "generic-conference-camera",
+    "manufacturer": "Generic",
+    "model": "Conference Camera",
+    "category": "camera",
+    "type": "conference_camera",
+    "description": "Generic USB conference camera placeholder. FOV must be configured from manufacturer datasheet before engineering sign-off.",
+    "physical": { "width": 0.20, "height": 0.08, "depth": 0.08 },
+    "camera": { "mount": "table" },
+    "mounting": { "wall": false, "floor": false, "ceiling": false, "table": true },
+    "ports": [
+      { "id": "usb-out", "label": "USB", "direction": "output", "signalTypes": ["VIDEO", "AUDIO", "USB"], "connector": "usbc", "transport": "usb-c", "required": true }
+    ],
+    "provenance": "user_defined",
+    "source": "Generic conference camera placeholder. HFOV is not specified — configure from the actual product datasheet. Not a manufacturer SKU."
+  },
+  {
+    "id": "generic-ceiling-camera",
+    "manufacturer": "Generic",
+    "model": "Ceiling Camera",
+    "category": "camera",
+    "type": "ceiling_camera",
+    "description": "Generic ceiling-mounted camera placeholder. FOV must be configured from manufacturer datasheet before engineering sign-off.",
+    "physical": { "width": 0.14, "height": 0.10, "depth": 0.14 },
+    "camera": { "mount": "ceiling" },
+    "mounting": { "wall": false, "floor": false, "ceiling": true },
+    "ports": [
+      { "id": "hdmi-out", "label": "HDMI OUT", "direction": "output", "signalTypes": ["VIDEO"], "connector": "hdmi", "transport": "hdmi", "required": false },
+      { "id": "net-1", "label": "NETWORK", "direction": "bidirectional", "signalTypes": ["NETWORK", "CONTROL"], "connector": "rj45", "transport": "ethernet", "required": false }
+    ],
+    "provenance": "user_defined",
+    "source": "Generic ceiling camera placeholder. HFOV and VFOV are not specified — configure from the actual product datasheet. Not a manufacturer SKU."
   }
 ]

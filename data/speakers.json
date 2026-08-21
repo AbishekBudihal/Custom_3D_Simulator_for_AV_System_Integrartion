@@ -5,6 +5,7 @@
     "model": "AcousticDesign AD-C6T",
     "category": "speaker",
     "type": "ceiling_speaker",
+    "family": "AcousticDesign",
     "physical": { "width": 0.20, "height": 0.12, "depth": 0.20 },
     "speaker": { "mount": "ceiling", "dispersionDeg": 130, "maxSplAt1m": 113, "sensitivityDb": 89, "frequencyResponse": "75Hz-20kHz", "powerRating": "75W @ 70/100V or 8ohm", "powerClass": "passive" },
     "provenance": "estimated",
@@ -16,6 +17,7 @@
     "model": "EdgeMax EM90",
     "category": "speaker",
     "type": "ceiling_speaker",
+    "family": "EdgeMax",
     "physical": { "width": 0.24, "height": 0.07, "depth": 0.24 },
     "speaker": { "mount": "ceiling", "dispersionDeg": 90, "maxSplAt1m": 116, "sensitivityDb": 90, "frequencyResponse": "65Hz-20kHz", "powerRating": "60W @ 70/100V or 8ohm", "powerClass": "passive" },
     "provenance": "estimated",
@@ -27,6 +29,7 @@
     "model": "Control 24C",
     "category": "speaker",
     "type": "ceiling_speaker",
+    "family": "Control",
     "physical": { "width": 0.28, "height": 0.13, "depth": 0.28 },
     "speaker": { "mount": "ceiling", "dispersionDeg": 100, "maxSplAt1m": 112, "sensitivityDb": 88, "frequencyResponse": "80Hz-20kHz", "powerRating": "75W @ 70/100V or 8ohm", "powerClass": "passive" },
     "provenance": "estimated",
@@ -38,9 +41,143 @@
     "model": "AcousticDesign AD-S52T",
     "category": "speaker",
     "type": "surface_speaker",
+    "family": "AcousticDesign",
     "physical": { "width": 0.20, "height": 0.32, "depth": 0.18 },
     "speaker": { "mount": "wall", "dispersionDeg": 90, "maxSplAt1m": 115, "sensitivityDb": 89, "frequencyResponse": "65Hz-20kHz", "powerRating": "75W @ 70/100V or 8ohm", "powerClass": "passive" },
     "provenance": "estimated",
     "source": "Publicly listed spec-sheet figures for this model line; verify against QSC's current datasheet."
+  },
+  {
+    "id": "qsc-adc4tlp",
+    "manufacturer": "QSC",
+    "model": "AcousticDesign AD-C4T-LP",
+    "category": "speaker",
+    "type": "ceiling_speaker",
+    "family": "AcousticDesign",
+    "description": "QSC AD-C4T-LP low-profile ceiling speaker for shallow plenum installations.",
+    "physical": { "width": 0.18, "height": 0.06, "depth": 0.18 },
+    "speaker": { "mount": "ceiling", "dispersionDeg": 100, "maxSplAt1m": 108, "sensitivityDb": 86, "frequencyResponse": "90Hz-20kHz", "powerRating": "30W @ 70/100V or 8ohm", "powerClass": "passive" },
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for QSC AD-C4T-LP; verify against QSC's current datasheet before procurement."
+  },
+  {
+    "id": "jbl-control26ct",
+    "manufacturer": "JBL Professional",
+    "model": "Control 26CT",
+    "category": "speaker",
+    "type": "ceiling_speaker",
+    "family": "Control",
+    "description": "JBL Control 26CT ceiling speaker with 110° coverage pattern.",
+    "physical": { "width": 0.22, "height": 0.10, "depth": 0.22 },
+    "speaker": { "mount": "ceiling", "dispersionDeg": 110, "maxSplAt1m": 112, "sensitivityDb": 89, "frequencyResponse": "80Hz-20kHz", "powerRating": "60W @ 70/100V or 8ohm", "powerClass": "passive" },
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for JBL Control 26CT; verify against JBL Professional's current datasheet before procurement."
+  },
+  {
+    "id": "bose-ds16f",
+    "manufacturer": "Bose Professional",
+    "model": "FreeSpace DS 16F",
+    "category": "speaker",
+    "type": "ceiling_speaker",
+    "family": "FreeSpace",
+    "description": "Bose FreeSpace DS 16F flush-mount ceiling speaker with 160° wide conical coverage.",
+    "physical": { "width": 0.20, "height": 0.08, "depth": 0.20 },
+    "speaker": { "mount": "ceiling", "dispersionDeg": 160, "maxSplAt1m": 94, "sensitivityDb": 88, "frequencyResponse": "130Hz-14kHz", "powerRating": "16W @ 70/100V or 8ohm", "powerClass": "passive" },
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for Bose FreeSpace DS 16F; verify against Bose Professional's current datasheet before procurement."
+  },
+  {
+    "id": "qsc-adp6t",
+    "manufacturer": "QSC",
+    "model": "AcousticDesign AD-P6T",
+    "category": "speaker",
+    "type": "pendant_speaker",
+    "family": "AcousticDesign",
+    "description": "QSC AD-P6T pendant speaker for open ceilings and high-clearance rooms.",
+    "physical": { "width": 0.20, "height": 0.30, "depth": 0.20 },
+    "speaker": { "mount": "pendant", "dispersionDeg": 100, "maxSplAt1m": 113, "sensitivityDb": 89, "frequencyResponse": "75Hz-20kHz", "powerRating": "75W @ 70/100V or 8ohm", "powerClass": "passive" },
+    "mounting": { "wall": false, "floor": false, "ceiling": true },
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for QSC AD-P6T; verify against QSC's current datasheet before procurement."
+  },
+  {
+    "id": "bose-designmax-dm3se",
+    "manufacturer": "Bose Professional",
+    "model": "DesignMax DM3SE",
+    "category": "speaker",
+    "type": "surface_speaker",
+    "family": "DesignMax",
+    "description": "Bose DesignMax DM3SE compact surface-mount speaker for small meeting rooms.",
+    "physical": { "width": 0.095, "height": 0.158, "depth": 0.095 },
+    "speaker": { "mount": "wall", "dispersionDeg": 130, "maxSplAt1m": 111, "sensitivityDb": 84, "frequencyResponse": "105Hz-20kHz", "powerRating": "25W @ 70/100V or 8ohm", "powerClass": "passive" },
+    "mounting": { "wall": true, "floor": false, "ceiling": false },
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for Bose DesignMax DM3SE; verify against Bose Professional's current datasheet before procurement."
+  },
+  {
+    "id": "generic-ceiling-speaker",
+    "manufacturer": "Generic",
+    "model": "Ceiling Speaker",
+    "category": "speaker",
+    "type": "ceiling_speaker",
+    "description": "Generic ceiling speaker placeholder. SPL and dispersion must be configured from manufacturer datasheet before engineering sign-off.",
+    "physical": { "width": 0.22, "height": 0.12, "depth": 0.22 },
+    "speaker": { "mount": "ceiling", "powerClass": "passive" },
+    "mounting": { "wall": false, "floor": false, "ceiling": true },
+    "ports": [
+      { "id": "spk-in", "label": "SPEAKER IN", "direction": "input", "signalTypes": ["AUDIO"], "connector": "phoenix", "transport": "analog-speaker", "required": true }
+    ],
+    "provenance": "user_defined",
+    "source": "Generic ceiling speaker placeholder. SPL and dispersion are not specified — configure from the actual product datasheet. Not a manufacturer SKU."
+  },
+  {
+    "id": "generic-wall-speaker",
+    "manufacturer": "Generic",
+    "model": "Wall Speaker",
+    "category": "speaker",
+    "type": "surface_speaker",
+    "description": "Generic wall-mount speaker placeholder. SPL and dispersion must be configured from manufacturer datasheet before engineering sign-off.",
+    "physical": { "width": 0.18, "height": 0.28, "depth": 0.16 },
+    "speaker": { "mount": "wall", "powerClass": "passive" },
+    "mounting": { "wall": true, "floor": false, "ceiling": false },
+    "ports": [
+      { "id": "spk-in", "label": "SPEAKER IN", "direction": "input", "signalTypes": ["AUDIO"], "connector": "phoenix", "transport": "analog-speaker", "required": true }
+    ],
+    "provenance": "user_defined",
+    "source": "Generic wall-mount speaker placeholder. SPL and dispersion are not specified — configure from the actual product datasheet. Not a manufacturer SKU."
+  },
+  {
+    "id": "generic-pendant-speaker",
+    "manufacturer": "Generic",
+    "model": "Pendant Speaker",
+    "category": "speaker",
+    "type": "pendant_speaker",
+    "description": "Generic pendant speaker placeholder. SPL and dispersion must be configured from manufacturer datasheet before engineering sign-off.",
+    "physical": { "width": 0.20, "height": 0.25, "depth": 0.20 },
+    "speaker": { "mount": "pendant", "powerClass": "passive" },
+    "mounting": { "wall": false, "floor": false, "ceiling": true },
+    "ports": [
+      { "id": "spk-in", "label": "SPEAKER IN", "direction": "input", "signalTypes": ["AUDIO"], "connector": "phoenix", "transport": "analog-speaker", "required": true }
+    ],
+    "provenance": "user_defined",
+    "source": "Generic pendant speaker placeholder. SPL and dispersion are not specified — configure from the actual product datasheet. Not a manufacturer SKU."
+  },
+  {
+    "id": "generic-soundbar",
+    "manufacturer": "Generic",
+    "model": "Soundbar",
+    "category": "speaker",
+    "type": "soundbar",
+    "description": "Generic soundbar placeholder. SPL and dispersion must be configured from manufacturer datasheet before engineering sign-off.",
+    "physical": { "width": 0.80, "height": 0.06, "depth": 0.10 },
+    "speaker": { "mount": "wall", "powerClass": "active" },
+    "mounting": { "wall": true, "floor": false, "ceiling": false },
+    "ports": [
+      { "id": "hdmi-in", "label": "HDMI IN (ARC)", "direction": "input", "signalTypes": ["AUDIO"], "connector": "hdmi", "transport": "hdmi", "required": false },
+      { "id": "line-in", "label": "LINE IN", "direction": "input", "signalTypes": ["AUDIO"], "connector": "line-trs", "transport": "analog-line", "required": false },
+      { "id": "usb-in", "label": "USB", "direction": "input", "signalTypes": ["AUDIO", "USB"], "connector": "usbc", "transport": "usb-c", "required": false }
+    ],
+    "provenance": "user_defined",
+    "source": "Generic soundbar placeholder. SPL and dispersion are not specified — configure from the actual product datasheet. Not a manufacturer SKU."
   }
 ]

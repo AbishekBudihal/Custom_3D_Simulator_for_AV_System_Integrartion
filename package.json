@@ -2,7 +2,7 @@
   "name": "simstage-av-designer",
   "version": "0.1.0",
   "private": true,
-  "description": "Web-based AV room design and simulation: layout, viewing analysis, geometric coverage, system connectivity, and cable routing.",
+  "description": "3D AV system engineering simulator: equipment placement, geometric coverage estimates, cable routing, and rule-based design validation.",
   "type": "module",
   "scripts": {
     "dev": "vite",

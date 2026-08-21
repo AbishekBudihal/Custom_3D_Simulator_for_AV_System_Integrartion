@@ -67,10 +67,11 @@ export const CATEGORY_GROUPS: CategoryGroup[] = [
   { id: 'audio', label: 'Audio', categories: ['speaker', 'amplifier', 'dsp'] },
   { id: 'microphones', label: 'Microphones', categories: ['microphone'] },
   { id: 'cameras', label: 'Cameras', categories: ['camera'] },
+  { id: 'collaboration', label: 'Collaboration', categories: ['codec'] },
   {
     id: 'infrastructure',
     label: 'Infrastructure',
-    categories: ['video_wall', 'codec', 'switcher', 'extender', 'control', 'rack', 'network', 'infrastructure']
+    categories: ['video_wall', 'switcher', 'extender', 'control', 'rack', 'network', 'infrastructure']
   }
 ];
 

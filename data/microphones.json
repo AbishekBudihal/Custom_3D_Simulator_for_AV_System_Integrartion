@@ -5,6 +5,7 @@
     "model": "MXA920",
     "category": "microphone",
     "type": "ceiling_array",
+    "family": "Microflex Advance",
     "physical": { "width": 0.60, "height": 0.04, "depth": 0.60 },
     "microphone": { "mount": "ceiling", "pickupRadiusM": 4.6, "pattern": "Steerable coverage (automatic lobe tracking)", "channels": 8, "connection": "Dante / Cat6 (PoE)" },
     "provenance": "estimated",
@@ -16,6 +17,7 @@
     "model": "TeamConnect Ceiling 2",
     "category": "microphone",
     "type": "ceiling_array",
+    "family": "TeamConnect",
     "physical": { "width": 0.35, "height": 0.04, "depth": 0.35 },
     "microphone": { "mount": "ceiling", "pickupRadiusM": 5.5, "pattern": "Automatic beamforming array", "channels": 1, "connection": "Dante / Cat6 (PoE)" },
     "provenance": "estimated",
@@ -27,6 +29,7 @@
     "model": "MXA310",
     "category": "microphone",
     "type": "table_array",
+    "family": "Microflex Advance",
     "physical": { "width": 0.22, "height": 0.03, "depth": 0.22 },
     "microphone": { "mount": "table", "pickupRadiusM": 3.05, "pattern": "4x toroid + omni (steerable)", "channels": 5, "connection": "Dante / Cat6 (PoE)" },
     "provenance": "estimated",
@@ -50,5 +53,223 @@
     },
     "provenance": "user_defined",
     "source": "Placeholder parameters for directional-sector evaluation. Replace with datasheet beam width and radius before engineering sign-off. Not a manufacturer SKU."
+  },
+  {
+    "id": "shure-mxa710w",
+    "manufacturer": "Shure",
+    "model": "MXA710W-4FT",
+    "category": "microphone",
+    "type": "wall_array",
+    "family": "Microflex Advance",
+    "description": "Shure MXA710 4-foot wall-mount linear array microphone with steerable lobes.",
+    "physical": { "width": 1.20, "height": 0.054, "depth": 0.096 },
+    "microphone": {
+      "mount": "wall",
+      "pickupRadiusM": 6.1,
+      "pattern": "Steerable linear array (up to 4 independent lobes)",
+      "channels": 4,
+      "connection": "Dante / Cat6 (PoE)"
+    },
+    "mounting": { "wall": true, "floor": false, "ceiling": false },
+    "ports": [
+      { "id": "net-1", "label": "DANTE / NETWORK", "direction": "output", "signalTypes": ["AUDIO", "NETWORK"], "connector": "rj45", "transport": "ethernet", "required": true }
+    ],
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for Shure MXA710W-4FT. Pickup radius is estimated from Shure's recommended room coverage (up to ~6.1m from the array). Verify against Shure's current datasheet before sign-off."
+  },
+  {
+    "id": "biamp-tcm-xa",
+    "manufacturer": "Biamp",
+    "model": "Parlé TCM-XA",
+    "category": "microphone",
+    "type": "ceiling_array",
+    "family": "Parlé",
+    "description": "Biamp Parlé TCM-XA ceiling beamforming microphone array.",
+    "physical": { "width": 0.305, "height": 0.055, "depth": 0.305 },
+    "microphone": {
+      "mount": "ceiling",
+      "pickupRadiusM": 3.3,
+      "pattern": "Beamforming array (3 steerable beams + ambient)",
+      "channels": 4,
+      "connection": "Dante / Cat6 (PoE)"
+    },
+    "mounting": { "wall": false, "floor": false, "ceiling": true },
+    "ports": [
+      { "id": "net-1", "label": "DANTE / NETWORK", "direction": "output", "signalTypes": ["AUDIO", "NETWORK"], "connector": "rj45", "transport": "ethernet", "required": true }
+    ],
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for Biamp Parlé TCM-XA. Pickup radius is estimated from Biamp's recommended coverage area. Verify against Biamp's current datasheet before sign-off."
+  },
+  {
+    "id": "clearone-bma360",
+    "manufacturer": "ClearOne",
+    "model": "BMA 360",
+    "category": "microphone",
+    "type": "table_array",
+    "family": "Beamforming Microphone Array",
+    "description": "ClearOne BMA 360 tabletop beamforming microphone array with 360° coverage.",
+    "physical": { "width": 0.282, "height": 0.032, "depth": 0.282 },
+    "microphone": {
+      "mount": "table",
+      "pickupRadiusM": 2.4,
+      "pattern": "360° beamforming array",
+      "channels": 1,
+      "connection": "Dante / Cat6 (PoE) + USB"
+    },
+    "mounting": { "wall": false, "floor": false, "ceiling": false, "table": true },
+    "ports": [
+      { "id": "net-1", "label": "DANTE / NETWORK", "direction": "output", "signalTypes": ["AUDIO", "NETWORK"], "connector": "rj45", "transport": "ethernet", "required": true },
+      { "id": "usb-1", "label": "USB", "direction": "bidirectional", "signalTypes": ["AUDIO", "USB"], "connector": "usb-a", "transport": "usb", "required": false }
+    ],
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for ClearOne BMA 360. Pickup radius is estimated from ClearOne's recommended table coverage. Verify against ClearOne's current datasheet before sign-off."
+  },
+  {
+    "id": "at-atnd1061dan",
+    "manufacturer": "Audio-Technica",
+    "model": "ATND1061DAN",
+    "category": "microphone",
+    "type": "ceiling_array",
+    "family": "ATND",
+    "description": "Audio-Technica ATND1061DAN ceiling-mount beamforming array microphone.",
+    "physical": { "width": 0.247, "height": 0.060, "depth": 0.247 },
+    "microphone": {
+      "mount": "ceiling",
+      "pickupRadiusM": 5.0,
+      "pattern": "Beamforming array (6 narrow beams)",
+      "channels": 6,
+      "connection": "Dante / Cat6 (PoE)"
+    },
+    "mounting": { "wall": false, "floor": false, "ceiling": true },
+    "ports": [
+      { "id": "net-1", "label": "DANTE / NETWORK", "direction": "output", "signalTypes": ["AUDIO", "NETWORK"], "connector": "rj45", "transport": "ethernet", "required": true }
+    ],
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for Audio-Technica ATND1061DAN. Pickup radius is estimated from the recommended coverage area (up to ~10m diameter room). Verify against Audio-Technica's current datasheet before sign-off."
+  },
+  {
+    "id": "shure-mx395",
+    "manufacturer": "Shure",
+    "model": "MX395",
+    "category": "microphone",
+    "type": "boundary",
+    "family": "Microflex",
+    "description": "Shure MX395 low-profile boundary microphone with cardioid pattern.",
+    "physical": { "width": 0.066, "height": 0.012, "depth": 0.066 },
+    "microphone": {
+      "mount": "table",
+      "pickupRadiusM": 0.9,
+      "coverageModel": "directional_sector",
+      "beamWidthDeg": 131,
+      "pattern": "Cardioid boundary",
+      "channels": 1,
+      "connection": "XLR / 4-pin mini"
+    },
+    "mounting": { "wall": false, "floor": false, "ceiling": false, "table": true },
+    "ports": [
+      { "id": "xlr-out", "label": "XLR OUT", "direction": "output", "signalTypes": ["AUDIO"], "connector": "xlr", "transport": "analog-mic", "required": true }
+    ],
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for Shure MX395 cardioid variant. Beam width estimated from published cardioid polar pattern. Verify against Shure's current datasheet before sign-off."
+  },
+  {
+    "id": "biamp-tbm-xa",
+    "manufacturer": "Biamp",
+    "model": "Parlé TBM-XA",
+    "category": "microphone",
+    "type": "table_array",
+    "family": "Parlé",
+    "description": "Biamp Parlé TBM-XA tabletop beamforming microphone.",
+    "physical": { "width": 0.172, "height": 0.038, "depth": 0.172 },
+    "microphone": {
+      "mount": "table",
+      "pickupRadiusM": 1.8,
+      "pattern": "Beamforming array (tabletop)",
+      "channels": 1,
+      "connection": "Dante / Cat6 (PoE)"
+    },
+    "mounting": { "wall": false, "floor": false, "ceiling": false, "table": true },
+    "ports": [
+      { "id": "net-1", "label": "DANTE / NETWORK", "direction": "output", "signalTypes": ["AUDIO", "NETWORK"], "connector": "rj45", "transport": "ethernet", "required": true }
+    ],
+    "provenance": "estimated",
+    "source": "Publicly listed spec-sheet figures for Biamp Parlé TBM-XA. Pickup radius is estimated from Biamp's recommended table coverage. Verify against Biamp's current datasheet before sign-off."
+  },
+  {
+    "id": "generic-ceiling-mic",
+    "manufacturer": "Generic",
+    "model": "Ceiling Microphone",
+    "category": "microphone",
+    "type": "ceiling_array",
+    "description": "Generic ceiling microphone placeholder. Pickup radius must be configured from manufacturer datasheet before engineering sign-off.",
+    "physical": { "width": 0.30, "height": 0.04, "depth": 0.30 },
+    "microphone": { "mount": "ceiling", "pickupRadiusM": 3.0, "pattern": "User-defined — configure from datasheet", "channels": 1, "connection": "Not specified" },
+    "mounting": { "wall": false, "floor": false, "ceiling": true },
+    "ports": [
+      { "id": "net-1", "label": "NETWORK / DANTE", "direction": "output", "signalTypes": ["AUDIO", "NETWORK"], "connector": "rj45", "transport": "ethernet", "required": true }
+    ],
+    "provenance": "user_defined",
+    "source": "Generic ceiling microphone placeholder. Pickup radius is a conservative default — configure from the actual product datasheet. Not a manufacturer SKU."
+  },
+  {
+    "id": "generic-table-mic",
+    "manufacturer": "Generic",
+    "model": "Table Microphone",
+    "category": "microphone",
+    "type": "table_array",
+    "description": "Generic table microphone placeholder. Pickup radius must be configured from manufacturer datasheet before engineering sign-off.",
+    "physical": { "width": 0.18, "height": 0.03, "depth": 0.18 },
+    "microphone": { "mount": "table", "pickupRadiusM": 2.0, "pattern": "User-defined — configure from datasheet", "channels": 1, "connection": "Not specified" },
+    "mounting": { "wall": false, "floor": false, "ceiling": false, "table": true },
+    "ports": [
+      { "id": "net-1", "label": "NETWORK / DANTE", "direction": "output", "signalTypes": ["AUDIO", "NETWORK"], "connector": "rj45", "transport": "ethernet", "required": true }
+    ],
+    "provenance": "user_defined",
+    "source": "Generic table microphone placeholder. Pickup radius is a conservative default — configure from the actual product datasheet. Not a manufacturer SKU."
+  },
+  {
+    "id": "generic-boundary-mic",
+    "manufacturer": "Generic",
+    "model": "Boundary Microphone",
+    "category": "microphone",
+    "type": "boundary",
+    "description": "Generic boundary microphone placeholder. Pickup radius must be configured from manufacturer datasheet before engineering sign-off.",
+    "physical": { "width": 0.12, "height": 0.02, "depth": 0.12 },
+    "microphone": { "mount": "table", "pickupRadiusM": 1.5, "pattern": "User-defined — configure from datasheet", "channels": 1, "connection": "Not specified" },
+    "mounting": { "wall": false, "floor": false, "ceiling": false, "table": true },
+    "ports": [
+      { "id": "xlr-out", "label": "XLR OUT", "direction": "output", "signalTypes": ["AUDIO"], "connector": "xlr", "transport": "analog-mic", "required": true }
+    ],
+    "provenance": "user_defined",
+    "source": "Generic boundary microphone placeholder. Pickup radius is a conservative default — configure from the actual product datasheet. Not a manufacturer SKU."
+  },
+  {
+    "id": "generic-gooseneck-mic",
+    "manufacturer": "Generic",
+    "model": "Gooseneck Microphone",
+    "category": "microphone",
+    "type": "gooseneck",
+    "description": "Generic gooseneck microphone placeholder. Beam width and pickup radius must be configured from manufacturer datasheet before engineering sign-off.",
+    "physical": { "width": 0.04, "height": 0.40, "depth": 0.04 },
+    "microphone": { "mount": "table", "pickupRadiusM": 1.0, "coverageModel": "directional_sector", "beamWidthDeg": 120, "pattern": "User-defined — configure beam width and radius from datasheet", "channels": 1, "connection": "Not specified" },
+    "mounting": { "wall": false, "floor": false, "ceiling": false, "table": true },
+    "ports": [
+      { "id": "xlr-out", "label": "XLR OUT", "direction": "output", "signalTypes": ["AUDIO"], "connector": "xlr", "transport": "analog-mic", "required": true }
+    ],
+    "provenance": "user_defined",
+    "source": "Generic gooseneck microphone placeholder. Beam width and pickup radius are conservative defaults — configure from the actual product datasheet. Not a manufacturer SKU."
+  },
+  {
+    "id": "generic-wireless-mic",
+    "manufacturer": "Generic",
+    "model": "Wireless Microphone",
+    "category": "microphone",
+    "type": "wireless",
+    "description": "Generic wireless microphone placeholder. Pickup radius must be configured from manufacturer datasheet before engineering sign-off. Receiver unit not modeled separately.",
+    "physical": { "width": 0.05, "height": 0.25, "depth": 0.05 },
+    "microphone": { "mount": "table", "pickupRadiusM": 0.8, "pattern": "User-defined — configure from datasheet", "channels": 1, "connection": "Wireless (receiver unit not modeled)" },
+    "mounting": { "wall": false, "floor": false, "ceiling": false, "table": true, "freestanding": true },
+    "provenance": "user_defined",
+    "source": "Generic wireless microphone placeholder. Pickup radius is a conservative default. Receiver unit is not separately modeled. Not a manufacturer SKU."
   }
 ]
